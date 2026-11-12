@@ -4,6 +4,7 @@ import os
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
+from shiboken6 import isValid
 
 
 class Instance(QObject):
@@ -53,5 +54,8 @@ class Instance(QObject):
 
     def _remove(self, client):
         self.clients.discard(client)
-        client.deleteLater()
+        # Qt may deliver disconnected during application teardown after deleting
+        # the native socket. The Python wrapper can still reach this callback.
+        if isValid(client):
+            client.deleteLater()
 
