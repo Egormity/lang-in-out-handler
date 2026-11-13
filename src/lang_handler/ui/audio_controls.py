@@ -11,28 +11,22 @@ class AudioSourceCombo(QComboBox):
     def __init__(self, monitor: bool, value: str = ""):
         super().__init__()
         self.monitor = monitor
-        self.setEditable(True)
+        self.setEditable(False)
         self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self.setToolTip("Choose a device or enter its audio source name.")
+        self.setToolTip("Choose a detected audio device.")
         self.set_sources([])
         self.set_value(value)
 
     def source_name(self) -> str:
-        index = self.currentIndex()
-        if index >= 0 and self.currentText() == self.itemText(index):
-            return self.itemData(index) or ""
-        match = self.findText(self.currentText())
-        if match >= 0:
-            return self.itemData(match) or ""
-        return self.currentText().strip()
+        return self.currentData() or ""
 
     def set_value(self, value: str):
         index = self.findData(value)
         if index >= 0:
             self.setCurrentIndex(index)
         else:
-            self.setCurrentIndex(-1)
-            self.setEditText(value)
+            self.addItem(f"Unavailable device: {value}", value)
+            self.setCurrentIndex(self.count() - 1)
 
     def set_sources(self, sources: list[dict]):
         selected = self.source_name()

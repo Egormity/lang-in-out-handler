@@ -1,6 +1,6 @@
 """Small shared presentation components."""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -42,17 +42,17 @@ def button(text: str, primary: bool = False) -> QPushButton:
     return item
 
 
-def editable_combo(items: list[str], value: str) -> QComboBox:
+def selection_combo(items: list[str], value: str) -> QComboBox:
     widget = QComboBox()
-    widget.setEditable(True)
-    widget.addItems(list(dict.fromkeys([*items, value])))
+    widget.setEditable(False)
+    widget.addItems(list(dict.fromkeys(item for item in [*items, value] if item)))
     widget.setCurrentText(value)
     return widget
 
 
 def language_combo(value: str) -> QComboBox:
     widget = QComboBox()
-    widget.setEditable(True)
+    widget.setEditable(False)
     for display, code in [
         ("Auto detect", ""),
         ("Japanese", "ja"),
@@ -63,23 +63,61 @@ def language_combo(value: str) -> QComboBox:
         ("German", "de"),
         ("Chinese", "zh"),
         ("Korean", "ko"),
+        ("Arabic", "ar"),
+        ("Bengali", "bn"),
+        ("Bulgarian", "bg"),
+        ("Catalan", "ca"),
+        ("Croatian", "hr"),
+        ("Czech", "cs"),
+        ("Danish", "da"),
+        ("Dutch", "nl"),
+        ("Estonian", "et"),
+        ("Finnish", "fi"),
+        ("Greek", "el"),
+        ("Hebrew", "he"),
+        ("Hindi", "hi"),
+        ("Hungarian", "hu"),
+        ("Indonesian", "id"),
+        ("Italian", "it"),
+        ("Latvian", "lv"),
+        ("Lithuanian", "lt"),
+        ("Malay", "ms"),
+        ("Norwegian", "no"),
+        ("Persian", "fa"),
+        ("Polish", "pl"),
+        ("Portuguese", "pt"),
+        ("Romanian", "ro"),
+        ("Serbian", "sr"),
+        ("Slovak", "sk"),
+        ("Slovenian", "sl"),
+        ("Swedish", "sv"),
+        ("Tamil", "ta"),
+        ("Telugu", "te"),
+        ("Thai", "th"),
+        ("Turkish", "tr"),
+        ("Ukrainian", "uk"),
+        ("Urdu", "ur"),
+        ("Vietnamese", "vi"),
     ]:
         widget.addItem(display, code)
     index = widget.findData(value)
     if index >= 0:
         widget.setCurrentIndex(index)
     else:
-        widget.setCurrentText(value)
-    widget.setToolTip("Choose a language or enter an ISO language code, such as ja or en.")
+        if value.isalpha() and len(value) in (2, 3):
+            widget.addItem(value, value)
+            widget.setCurrentIndex(widget.count() - 1)
+    widget.setToolTip("Choose the spoken language, or detect it automatically.")
     return widget
 
 
 def language_value(widget: QComboBox) -> str:
-    index = widget.findText(widget.currentText())
-    return widget.itemData(index) if index >= 0 else widget.currentText().strip()
+    return widget.currentData() or ""
 
 
 class TextPane(QWidget):
+    speech_requested = Signal(str)
+
     def __init__(self, title: str, placeholder: str, read_only: bool = True):
         super().__init__()
         self.setObjectName("textPane")
@@ -90,6 +128,12 @@ class TextPane(QWidget):
         row = QHBoxLayout()
         row.addWidget(label(title))
         row.addStretch()
+        self.speak = button("Speak")
+        self.speak.setObjectName("quiet")
+        self.speak.setAccessibleName(f"Speak {title.lower()}")
+        self.speak.setToolTip("Read this text aloud using your speech preferences.")
+        self.speak.setEnabled(False)
+        row.addWidget(self.speak)
         copy = button("Copy")
         copy.setObjectName("quiet")
         copy.setMaximumWidth(85)
@@ -102,6 +146,10 @@ class TextPane(QWidget):
         self.text.setPlaceholderText(placeholder)
         self.text.document().setMaximumBlockCount(2000)
         copy.clicked.connect(lambda: QApplication.clipboard().setText(self.text.toPlainText()))
+        self.speak.clicked.connect(lambda: self.speech_requested.emit(self.text.toPlainText()))
+        self.text.textChanged.connect(
+            lambda: self.speak.setEnabled(bool(self.text.toPlainText().strip()))
+        )
         layout.addLayout(row)
         layout.addWidget(self.text)
         self.actions = QHBoxLayout()

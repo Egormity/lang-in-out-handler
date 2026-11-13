@@ -107,12 +107,15 @@ class WindowPin(QObject):
                 QTimer.singleShot(100, self._attempt)
         else:
             self.verified = False
+            self.auto_pending = True
             self.changed.emit(self.confirmed)
             self.message.emit(result.get("message", "Could not verify On top."))
 
     def _process_error(self, error):
         if error == QProcess.ProcessError.FailedToStart:
             self.timeout.stop()
+            self.verified = False
+            self.auto_pending = True
             if self.process:
                 self.process.deleteLater()
                 self.process = None
@@ -120,6 +123,8 @@ class WindowPin(QObject):
 
     def _timeout(self):
         if self.process:
+            self.verified = False
+            self.auto_pending = True
             self.process.kill()
             self.message.emit("On top verification timed out. Try again after focusing the window.")
 
@@ -130,3 +135,4 @@ class WindowPin(QObject):
             self.process.waitForFinished(1000)
             if self.process:
                 self.process.kill()
+        self.auto_pending = False

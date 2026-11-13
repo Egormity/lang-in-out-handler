@@ -75,3 +75,32 @@ def test_stale_key_failure_cannot_overwrite_new_connection(controller, qtbot, mo
         assert c.window.status.text() == "New key saved."
     finally:
         release.set()
+
+
+def test_connection_proxy_commit_survives_shortcuts_and_preserves_pending_edits(
+    controller, qtbot, monkeypatch
+):
+    c = controller
+
+    class Service:
+        def __init__(self, key, *, proxy=None):
+            assert proxy == "http://proxy.example:8080"
+
+        def list_models(self):
+            return ["gpt-transcribe"]
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("lang_handler.controller.OpenAIService", Service)
+    preferences = c.window.pages["preferences"]
+    preferences.api_proxy_url.setText("http://proxy.example:8080")
+    preferences.instructions["tts_instructions"].setPlainText("Pending voice instructions.")
+    c.test_key()
+    qtbot.waitUntil(lambda: not c.jobs.active)
+    c.window.sync_mode_settings()
+    assert c.settings.api_proxy_url == "http://proxy.example:8080"
+    assert c.window.settings.api_proxy_url == "http://proxy.example:8080"
+    assert c.store.load_settings().api_proxy_url == "http://proxy.example:8080"
+    assert preferences.instructions["tts_instructions"].toPlainText() == "Pending voice instructions."
+    assert c.settings.tts_instructions == "Speak naturally and clearly."

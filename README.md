@@ -6,15 +6,17 @@ A Linux desktop app for dictation, live bilingual captions, translation, and tex
 
 | Tool | Behavior |
 | --- | --- |
-| Voice input | Record the microphone once and transcribe on Stop, or transcribe consecutive chunks. Copy the result or paste it into the active application. |
-| Live captions | Capture the default speaker output, including browser and media-player audio. Show a floating transcript and translation side by side. |
-| Translate | Translate text and read the original or translated text aloud. Replay, stop, or save the generated audio on the same page. |
-| Handwriting | Draw with a mouse or tablet pen, in the main window or an always-on-top floating canvas. Recognize automatically or use Send to transcribe. |
-| History | Search, browse, and copy locally saved text; delete history from the app. |
+| Voice input | Record the microphone once and transcribe on Stop, or transcribe consecutive chunks. Copy, speak, or paste each result into the active application. |
+| Live captions | Capture the default speaker output, including browser and media-player audio. Show a minimal floating transcript and translation side by side, with Copy and Speak on every segment. |
+| Translate | Translate text and read the original or translated text aloud. Shared playback controls let you replay, stop, or save generated audio from any tool. |
+| Handwriting | Draw with a mouse or tablet pen, in the main window or an always-on-top floating canvas. Recognize automatically or use Send to transcribe, then copy or speak individual candidate readings. |
+| History | Search, browse, copy, or speak locally saved text; delete history from the app. |
 
-Each tool has an **Options** section for models and instructions, collapsed by default so the content stays prominent. Recognition instructions supply vocabulary/context to the speech model; they are not a general text-editing instruction. Translate includes separate translation and voice instructions. Preferences are grouped by connection, recognition, translation/speech, handwriting, and shortcuts.
+All model, voice, instruction, recognition, and floating-window settings live in **Preferences**, grouped by connection, recognition, translation/speech, handwriting, and shortcuts. Speech settings apply to every **Speak** button. Recognition instructions supply vocabulary/context to the speech model; they are not a general text-editing instruction.
 
-The floating caption window has just **Transcript** and **Translation** controls. Translation controls both its pane and translation of new audio; there is no separate Translate audio switch. Hiding the whole window does not stop capture. Use **Stop**, the capture shortcut, or the tray menu to stop.
+Dropdowns accept selections only. Use **Refresh models** in Connection to load model choices available to your account. Number fields support direct typing plus large **− / +** buttons; opacity is displayed as a percentage. Every preference has a **Reset** button, and **Reset all** restores defaults in the form. Choose **Save preferences** to apply them. Resetting preferences keeps the API key and history; the separate Remove key and Delete history actions control those.
+
+Floating windows contain content and actions only. Configure transcript/translation visibility, opacity, text size, and pinning in Preferences. Turning off **Show translation** also stops translation of new audio. Hiding the caption window does not stop capture; use **Stop**, the capture shortcut, or the tray menu.
 
 ## Install on Ubuntu / GNOME
 
@@ -34,19 +36,19 @@ Open **Preferences**, save your OpenAI API key, and use **Test connection / Refr
 
 If your desktop launcher does not inherit the terminal's proxy settings, set **Proxy URL** in Preferences. The saved HTTP(S)/SOCKS proxy applies to every mode, including Realtime speech; leaving it blank uses the process environment. Test connection uses the key and proxy currently entered in the form and saves them before checking, without discarding other pending preferences. Region/network restrictions are reported separately from invalid API keys.
 
-Defaults: `gpt-transcribe` for speech recognition, `gpt-6-luna` for text translation, and `gpt-realtime-2.1-mini` for speech generation. Model fields are editable. Available models depend on your API account. The app uses bounded audio uploads for both once and chunk modes; live-only transcription models are not selectable suggestions.
+Defaults: `gpt-transcribe` for speech recognition, `gpt-6-luna` for text translation, and `gpt-realtime-2.1-mini` for speech generation. Model choices depend on your API account and can be refreshed in Connection. The app uses bounded audio uploads for both once and chunk modes; live-only transcription models are not selectable suggestions.
 
 ### Handwriting
 
-Open **Handwriting** and draw with your mouse or tablet pen. Use **Undo stroke** and **Clear canvas** as needed. **Send to transcribe** works with automatic recognition turned off. Copy or edit the recognized text below the canvas.
+Open **Handwriting** and draw with your mouse or tablet pen. Use **Undo** and **Clear** as needed. **Send to transcribe** works with automatic recognition turned off. Possible readings appear below the canvas, most likely first, with individual **Copy** and **Speak** buttons.
 
-Choose **Float window** to keep handwriting above other applications. Its **On top** control reflects the verified pin state. **Dock back** (or closing the floating window) returns the same canvas to the main window without losing strokes, recognized text, or a pending recognition. You can reopen it from the tray or with `lang-in-out --action drawing`. GNOME may ask you to click an unfocused window once before it can be pinned.
+Choose **Float window** to keep handwriting above other applications. Configure **Keep handwriting on top** in Preferences. **Dock** (or closing the floating window) returns the same canvas to the main window without losing strokes, recognized text, or a pending recognition. You can reopen it from the tray or with `lang-in-out --action drawing`. GNOME may ask you to click an unfocused window once before it can be pinned.
 
 Pen handling supports Qt tablet events and driver-emulated mouse events. Pressure contact can start a stroke when a driver omits the initial tip-press event; hovering does not draw. Tablet behavior depends on the installed tablet driver and desktop session.
 
 In **Preferences**, choose the handwriting model, enable/disable automatic recognition, and set the pause from 0.2 to 10 seconds (1.2 seconds by default). Only the latest canvas snapshot is queued while recognition is busy, blank canvases are never sent, and results for an older drawing cannot overwrite newer content. Each automatic recognition is a billable image request.
 
-Handwriting defaults to `gpt-6.1-sol`, which correctly recognized the Japanese sample used in live verification. Recognition accuracy still depends on handwriting and model choice. Canvas images are not retained in history; recognized text is.
+Handwriting defaults to `gpt-6-luna`. The model returns a strict JSON object containing an array of candidate strings; the app validates, deduplicates, and displays that array as individual readings. A blank or unreadable image returns no candidates. Recognition accuracy depends on handwriting and model choice. Canvas images are not retained in history; recognized candidates are.
 
 ### Keyboard controls
 

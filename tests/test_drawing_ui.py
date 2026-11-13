@@ -1,10 +1,12 @@
 """Handwriting UI behavior: no network, audio, or private images."""
 
 from copy import deepcopy
+from dataclasses import replace
 
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QImage
 from PySide6.QtTest import QSignalSpy
+from PySide6.QtWidgets import QCheckBox, QComboBox, QPlainTextEdit, QSpinBox
 
 from lang_handler.settings import Settings
 from lang_handler.ui.main_window import MainWindow
@@ -83,11 +85,11 @@ def test_stale_result_is_ignored_and_auto_off_cancels(qtbot):
     stroke(qtbot, page.canvas)
     old_revision = window.drawing_revision()
     stroke(qtbot, page.canvas, 20)
-    window.set_drawing_result("stale", old_revision)
-    assert page.result.text.toPlainText() == ""
-    window.set_drawing_result("カフェ", window.drawing_revision())
-    assert page.result.text.toPlainText() == "カフェ"
-    page.auto_send.setChecked(False)
+    window.set_drawing_result(["stale"], old_revision)
+    assert page.result.items == []
+    window.set_drawing_result(["カフェ", "カフエ"], window.drawing_revision())
+    assert page.result.items == ["カフェ", "カフエ"]
+    page.update_settings(replace(page.settings, drawing_auto_send=False))
     assert cancelled.count() == 1
     assert not page.timer.isActive()
     window.set_drawing_busy(True)
@@ -103,7 +105,7 @@ def test_handwriting_preferences_disable_delay_but_keep_manual(qtbot):
     selected = preferences.collect()
     assert selected.drawing_debounce_ms == 2300
     window._save_preferences(selected)
-    assert not page.auto_send.isChecked()
+    assert not page.settings.drawing_auto_send
     stroke(qtbot, page.canvas)
     assert page.send_button.isEnabled()
     assert not page.timer.isActive()
@@ -115,9 +117,8 @@ def test_drawing_controls_never_overlap_canvas_at_small_window_sizes(qtbot):
         window.resize(width, height)
         qtbot.wait(30)
         canvas_bottom = page.canvas.geometry().bottom()
-        assert canvas_bottom < page.auto_send.geometry().top()
-        assert canvas_bottom < page.send_button.geometry().top()
-        assert page.result.geometry().top() > page.send_button.geometry().bottom()
+        assert page.send_button.geometry().bottom() < page.canvas.geometry().top()
+        assert page.result.geometry().top() > canvas_bottom
         page.scroll.ensureWidgetVisible(page.result)
         qtbot.wait(10)
         assert page.result.isVisible()
@@ -129,7 +130,7 @@ def test_float_and_dock_keep_one_canvas_revision_and_recognized_text(qtbot):
     original_canvas = page.canvas
     revision = window.drawing_revision()
     strokes = deepcopy(page.canvas.strokes)
-    window.set_drawing_result("日本語", revision)
+    window.set_drawing_result(["日本語"], revision)
     changed = QSignalSpy(page.canvas.changed)
     page.float_button.click()
     qtbot.waitUntil(page.floating.isVisible)
@@ -138,7 +139,7 @@ def test_float_and_dock_keep_one_canvas_revision_and_recognized_text(qtbot):
     assert page.canvas is original_canvas
     assert page.canvas.revision == revision
     assert page.canvas.strokes == strokes
-    assert page.result.text.toPlainText() == "日本語"
+    assert page.result.items == ["日本語"]
     assert page.floating.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
     assert not page.floating.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
     page.floating.dock_button.click()
@@ -148,7 +149,7 @@ def test_float_and_dock_keep_one_canvas_revision_and_recognized_text(qtbot):
     assert page.canvas is original_canvas
     assert page.canvas.revision == revision
     assert changed.count() == 0
-    assert page.result.text.toPlainText() == "日本語"
+    assert page.result.items == ["日本語"]
 
 
 def test_floating_pin_and_close_preserve_canvas(qtbot):
@@ -156,10 +157,10 @@ def test_floating_pin_and_close_preserve_canvas(qtbot):
     stroke(qtbot, page.canvas)
     revision = page.canvas.revision
     page.show_floating()
-    page.floating.pin.setChecked(False)
+    page.update_settings(replace(page.settings, drawing_on_top=False))
     assert not page.floating.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
     assert page.floating.isVisible()
-    page.floating.pin.setChecked(True)
+    page.update_settings(replace(page.settings, drawing_on_top=True))
     assert page.floating.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
     page.floating.close()
     assert not page.is_floating
@@ -185,9 +186,8 @@ def test_floating_hide_restore_and_manual_recognition_share_state(qtbot):
     assert page.floating.isVisible()
 
 
-def test_floating_editor_keeps_canvas_large_and_instructions_collapsed(qtbot):
+def test_floating_editor_keeps_canvas_large_and_contains_no_preferences(qtbot):
     _, page = drawing_window(qtbot, drawing_auto_send=False)
-    assert not page.instructions.isVisible()
     page.show_floating()
     qtbot.wait(20)
     assert page.floating.size().width() == 750
@@ -197,13 +197,11 @@ def test_floating_editor_keeps_canvas_large_and_instructions_collapsed(qtbot):
         page.floating.resize(width, height)
         qtbot.wait(20)
         assert page.canvas.height() >= 240
-        assert page.canvas.geometry().bottom() < page.auto_send.geometry().top()
-        assert page.canvas.geometry().bottom() < page.send_button.geometry().top()
-        assert page.result.geometry().top() > page.send_button.geometry().bottom()
-    page.advanced_toggle.setChecked(True)
-    assert page.instructions.isVisible()
+        assert page.send_button.geometry().bottom() < page.canvas.geometry().top()
+        assert page.result.geometry().top() > page.canvas.geometry().bottom()
+    for kind in (QCheckBox, QComboBox, QSpinBox, QPlainTextEdit):
+        assert page.floating.findChildren(kind) == []
     page.dock_workspace()
-    assert page.instructions.isVisible()
 
 
 def test_shutdown_hides_floating_host_and_stops_pending_recognition(qtbot):
@@ -247,3 +245,33 @@ page.shutdown()
         timeout=15,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_each_candidate_can_be_copied_and_spoken_without_combining_alternatives(qtbot, qapp):
+    window, page = drawing_window(qtbot, drawing_auto_send=False)
+    stroke(qtbot, page.canvas)
+    window.set_drawing_result(["カフェ", "カフエ"], page.canvas.revision)
+    speech = QSignalSpy(page.speech_requested)
+    page.result.rows[1].speak.click()
+    assert speech.count() == 1
+    assert speech.at(0) == ["カフエ"]
+    page.result.rows[0].copy.click()
+    assert qapp.clipboard().text() == "カフェ"
+    page.show_floating()
+    page.set_speech_active(True)
+    stopped = QSignalSpy(page.speech_stop_requested)
+    assert page.result.stop.isVisible()
+    page.result.stop.click()
+    assert stopped.count() == 1
+    page.set_speech_active(False)
+    assert page.result.stop.isHidden()
+
+
+def test_preferences_change_pen_width_and_automatic_recognition(qtbot):
+    _, page = drawing_window(qtbot, drawing_auto_send=False)
+    stroke(qtbot, page.canvas)
+    page.update_settings(replace(page.settings, drawing_auto_send=True, drawing_pen_width=8))
+    assert page.canvas.pen_width == 8
+    assert page.timer.isActive()
+    page.update_settings(replace(page.settings, drawing_auto_send=False))
+    assert not page.timer.isActive()

@@ -21,6 +21,7 @@ from .common import button, label
 from .drawing_page import DrawingPage
 from .history import HistoryPage
 from .preferences import PreferencesPage
+from .speech_controls import SpeechControls
 from .text_pages import TranslatePage
 from .theme import STYLE
 
@@ -114,6 +115,12 @@ class MainWindow(QMainWindow):
         )
         self.status.setObjectName("status")
         self.status.setWordWrap(True)
+        self.speech_controls = SpeechControls()
+        self.speech_controls.layout().setContentsMargins(16, 6, 16, 6)
+        self.speech_controls.stop_requested.connect(self.speech_stop_requested)
+        self.speech_controls.replay_requested.connect(self.speech_replay_requested)
+        self.speech_controls.hide()
+        shell.addWidget(self.speech_controls)
         shell.addWidget(self.status)
         self.setCentralWidget(central)
         for editor in self.findChildren(QPlainTextEdit):
@@ -130,14 +137,15 @@ class MainWindow(QMainWindow):
                 lambda path, chunked, key=mode: self._file(key, path, chunked)
             )
             page.options_changed.connect(self.sync_mode_settings)
+            page.speech_requested.connect(self._speak)
         self.pages["output"].overlay_requested.connect(self.overlay_requested)
         self.pages["translate"].requested.connect(self._translate)
         self.pages["translate"].speech_requested.connect(self._speak)
-        self.pages["translate"].stop_requested.connect(self.speech_stop_requested)
-        self.pages["translate"].replay_requested.connect(self.speech_replay_requested)
         self.pages["drawing"].requested.connect(self._drawing)
         self.pages["drawing"].cancel_requested.connect(self.drawing_cancel_requested)
-        self.pages["drawing"].options_changed.connect(self.sync_mode_settings)
+        self.pages["drawing"].speech_requested.connect(self._speak)
+        self.pages["drawing"].speech_stop_requested.connect(self.speech_stop_requested)
+        self.pages["history"].speech_requested.connect(self._speak)
         preferences = self.pages["preferences"]
         preferences.saved.connect(self._save_preferences)
         preferences.key_saved.connect(self.key_saved)
@@ -150,13 +158,7 @@ class MainWindow(QMainWindow):
         """Commit current mode controls before a request, including shortcut requests."""
         self.settings = replace(
             self.settings,
-            input_instructions=self.pages["input"].instructions.toPlainText(),
-            output_instructions=self.pages["output"].instructions.toPlainText(),
-            translation_instructions=self.pages["translate"].instructions.toPlainText(),
-            tts_instructions=self.pages["translate"].tts_instructions.toPlainText(),
             target_language=self.pages["translate"].target.currentText().strip() or "English",
-            drawing_instructions=self.pages["drawing"].instructions.toPlainText(),
-            drawing_auto_send=self.pages["drawing"].auto_send.isChecked(),
             input_chunked=self.pages["input"].chunked(),
             output_chunked=self.pages["output"].chunked(),
             auto_paste=self.pages["input"].option.isChecked(),
@@ -179,34 +181,12 @@ class MainWindow(QMainWindow):
         self.translate_requested.emit(text)
 
     def _speak(self, text):
-        self.sync_mode_settings()
         self.speech_requested.emit(text)
 
     def _drawing(self, image, revision):
-        self.sync_mode_settings()
         self.drawing_requested.emit(image, revision)
 
     def _save_preferences(self, settings):
-        # Preserve current per-mode edits while applying connection/model preferences.
-        self.sync_mode_settings()
-        settings = replace(
-            settings,
-            **{
-                key: getattr(self.settings, key)
-                for key in (
-                    "input_instructions",
-                    "output_instructions",
-                    "translation_instructions",
-                    "tts_instructions",
-                    "drawing_instructions",
-                    "input_chunked",
-                    "output_chunked",
-                    "auto_paste",
-                    "translation_enabled",
-                    "translation_visible",
-                )
-            },
-        )
         self.update_settings(settings)
         self.settings_saved.emit(settings)
 
@@ -244,14 +224,21 @@ class MainWindow(QMainWindow):
         self.pages["translate"].result.text.setPlainText(text)
 
     def set_speech(self, path: str):
-        self.pages["translate"].set_audio(path)
+        self.speech_controls.set_audio(path)
+        self.speech_controls.show()
+
+    def set_speech_active(self, active):
+        self.speech_controls.stop.setEnabled(active)
+        if active:
+            self.speech_controls.show()
+        self.pages["drawing"].set_speech_active(active)
 
     def set_source_text(self, mode: str, text: str):
         if mode in ("translate", "tts"):
             self.pages["translate"].source.text.setPlainText(text)
 
-    def set_drawing_result(self, text: str, revision: int):
-        self.pages["drawing"].set_result(text, revision)
+    def set_drawing_result(self, items: list[str], revision: int):
+        self.pages["drawing"].set_result(items, revision)
 
     def set_drawing_busy(self, busy: bool):
         self.pages["drawing"].set_busy(busy)

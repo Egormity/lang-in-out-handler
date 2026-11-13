@@ -22,6 +22,9 @@ QPushButton:disabled { color: #74808e; border-color: #303a45; background: #222b3
 QPushButton#primary { background: #83dbbd; color: #10382b; font-weight: 600; border-color: #83dbbd; }
 QPushButton#primary:hover { background: #a1e9d0; }
 QPushButton#primary:disabled { background: #2b5549; border-color: #2b5549; color: #88a89c; }
+QPushButton#numberStep { padding: 3px; font-size: 20px; font-weight: 600; }
+QPushButton#preferenceReset { padding: 7px 6px; font-size: 12px; background: transparent; color: #a5b8c5; }
+QPushButton#preferenceReset:hover { background: #2b3943; color: #e1f5f0; }
 QPushButton#danger { color: #f4b0a7; }
 QPushButton#quiet { border: none; background: transparent; color: #a5b8c5; padding: 6px 8px; }
 QPushButton#quiet:hover { background: #2b3943; color: #e1f5f0; }
@@ -34,6 +37,9 @@ QLineEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QKeySequenceEdit
 QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus { border-color: #83cdb4; }
 QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled { color: #71808d; background: #20272e; }
 QPlainTextEdit { padding: 10px; }
+QSpinBox#preferenceNumber::up-button, QSpinBox#preferenceNumber::down-button,
+QDoubleSpinBox#preferenceNumber::up-button, QDoubleSpinBox#preferenceNumber::down-button { width: 0; height: 0; border: none; }
+QSpinBox#preferenceNumber QLineEdit, QDoubleSpinBox#preferenceNumber QLineEdit { border: none; padding: 0; background: transparent; }
 QComboBox { min-height: 20px; padding-right: 25px; }
 QComboBox::drop-down { border: none; width: 25px; }
 QComboBox QAbstractItemView { background: #22303a; selection-background-color: #315f4d; }

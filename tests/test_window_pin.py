@@ -122,3 +122,23 @@ def test_helper_failure_keeps_checkbox_unconfirmed(qapp):
     assert not manager.verified
     assert changes == [False]
     assert messages == [result["message"]]
+
+
+def test_failed_pin_can_retry_when_the_window_receives_focus(qapp, qtbot, monkeypatch):
+    from PySide6.QtCore import QEvent
+
+    window = Window()
+    manager = WindowPin(window)
+    result = {"ok": False, "message": "Click the window to retry."}
+    manager.process = SimpleNamespace(
+        readAllStandardOutput=lambda: QByteArray(json.dumps(result).encode()),
+        deleteLater=lambda: None,
+    )
+    manager._finished(1, QProcess.ExitStatus.NormalExit)
+    assert manager.auto_pending
+    attempts = []
+    monkeypatch.setattr(manager, "_attempt", lambda: attempts.append(True))
+    manager.eventFilter(window, QEvent(QEvent.Type.WindowActivate))
+    qtbot.waitUntil(lambda: bool(attempts))
+    manager.stop()
+    assert not manager.auto_pending

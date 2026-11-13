@@ -42,12 +42,13 @@ class Handwriting(QObject):
             finally:
                 service.close()
 
-        def success(text):
+        def success(items):
             if epoch != self.epoch or revision != self.c.window.drawing_revision():
                 return
-            self.c.window.set_drawing_result(text, revision)
-            if text:
-                self.c.remember("drawing", text, "", settings.drawing_model)
+            self.c.window.set_drawing_result(items, revision)
+            if items:
+                for text in items:
+                    self.c.remember("drawing", text, "", settings.drawing_model)
                 self.c.status("Handwriting recognized.")
             else:
                 self.c.status("No readable handwriting found. Try larger, clearer strokes.")

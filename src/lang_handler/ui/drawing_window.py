@@ -1,7 +1,7 @@
 """An independent, pinnable host for the shared handwriting editor."""
 
-from PySide6.QtCore import QSignalBlocker, Qt, Signal
-from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from ..window_pin import WindowPin
 from .common import button
@@ -11,7 +11,7 @@ from .theme import STYLE
 class DrawingWindow(QWidget):
     dock_requested = Signal()
 
-    def __init__(self):
+    def __init__(self, on_top=True):
         super().__init__()
         self.setWindowTitle("Lang In/Out · Handwriting")
         self.setWindowFlags(Qt.WindowType.Tool)
@@ -26,16 +26,12 @@ class DrawingWindow(QWidget):
         title.setObjectName("section")
         toolbar.addWidget(title)
         toolbar.addStretch()
-        self.pin = QCheckBox("On top")
-        self.pin.setAccessibleName("Keep handwriting window on top")
-        self.pin.toggled.connect(self._pin)
-        self.dock_button = button("Dock back")
+        self.dock_button = button("Dock")
         self.dock_button.setObjectName("quiet")
         self.dock_button.clicked.connect(self.dock_requested)
         self.hide_button = button("Hide")
         self.hide_button.setObjectName("quiet")
         self.hide_button.clicked.connect(self.hide)
-        toolbar.addWidget(self.pin)
         toolbar.addWidget(self.dock_button)
         toolbar.addWidget(self.hide_button)
         layout.addLayout(toolbar)
@@ -47,10 +43,9 @@ class DrawingWindow(QWidget):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         layout.addWidget(self.scroll, 1)
-        self.pin_control = WindowPin(self)
-        self.pin_control.changed.connect(self._pin_state)
+        self.pin_control = WindowPin(self, on_top)
         self.pin_control.message.connect(self._pin_message)
-        self.pin_control.request(True)
+        self.pin_control.request(on_top)
 
     def set_workspace(self, workspace):
         self.scroll.setWidget(workspace)
@@ -66,13 +61,6 @@ class DrawingWindow(QWidget):
         # A tablet/mouse click must be able to focus the editor after initial display.
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, False)
         self.pin_control.request(self.pin_control.desired, activate=True)
-
-    def _pin(self, enabled):
-        self.pin_control.request(enabled, activate=True)
-
-    def _pin_state(self, enabled):
-        with QSignalBlocker(self.pin):
-            self.pin.setChecked(enabled)
 
     def _pin_message(self, message):
         self.pin_status.setText(message)

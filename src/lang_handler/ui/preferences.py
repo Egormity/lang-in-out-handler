@@ -3,11 +3,11 @@
 from dataclasses import replace
 
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QTabWidget, QVBoxLayout, QWidget
 
 from . import preference_sections
-from .common import button, label, language_value, title_block
+from .common import button, label, title_block
+from .preference_controls import PreferenceFields
 from .sections import scrollable_body
 
 
@@ -20,6 +20,9 @@ class PreferencesPage(QWidget):
     def __init__(self, settings, api_key_present=False):
         super().__init__()
         self.settings = settings
+        self.fields = PreferenceFields()
+        self.reset_buttons = self.fields.reset_buttons
+        self.instructions = {}
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 24, 24, 20)
         outer.setSpacing(16)
@@ -39,7 +42,14 @@ class PreferencesPage(QWidget):
             self.tabs.addTab(builder(self, settings), title)
         outer.addWidget(self.tabs, 1)
         row = QHBoxLayout()
-        row.addWidget(label("Preferences are stored on this computer.", True), 1)
+        self.reset_all_button = button("Reset all")
+        self.reset_all_button.setToolTip(
+            "Restore all preference defaults. Save to apply; your API key is kept."
+        )
+        self.reset_all_button.clicked.connect(self.reset_all)
+        row.addWidget(self.reset_all_button)
+        self.save_hint = label("Save to apply changes.", True)
+        row.addWidget(self.save_hint, 1)
         self.save_preferences = button("Save preferences", True)
         self.save_preferences.clicked.connect(lambda: self.saved.emit(self.collect()))
         row.addWidget(self.save_preferences)
@@ -86,7 +96,7 @@ class PreferencesPage(QWidget):
         self.api_proxy_url.setToolTip(
             "Supports HTTP, HTTPS, and SOCKS proxy URLs. Leave empty to use the environment proxy, or connect directly when none is configured."
         )
-        form.addRow("Proxy URL", self.api_proxy_url)
+        self.fields.add(form, "Proxy URL", "api_proxy_url", self.api_proxy_url)
         form.addRow(
             label(
                 "Test connection checks the key and proxy entered here. API usage is billed to your OpenAI account.",
@@ -113,26 +123,11 @@ class PreferencesPage(QWidget):
         self.key_saved.emit("")
 
     def collect(self):
-        values = {key: widget.currentText().strip() for key, widget in self.models.items()}
-        values.update(
-            api_proxy_url=self.api_proxy_url.text().strip(),
-            input_language=language_value(self.input_language),
-            output_language=language_value(self.output_language),
-            target_language=self.target_language.currentText().strip() or "English",
-            voice=self.voice.currentText().strip() or "coral",
-            chunk_seconds=self.chunk_seconds.value(),
-            microphone_source=self.microphone_source.source_name(),
-            output_source=self.output_source.source_name(),
-            font_size=self.font_size.value(),
-            overlay_opacity=self.opacity.value(),
-            drawing_auto_send=self.drawing_auto_send.isChecked(),
-            drawing_debounce_ms=round(self.drawing_delay.value() * 1000),
-            shortcuts={
-                mode: widget.keySequence().toString(QKeySequence.SequenceFormat.PortableText)
-                for mode, widget in self.shortcuts.items()
-            },
-        )
-        return replace(self.settings, **values)
+        return replace(self.settings, **self.fields.collect())
+
+    def reset_all(self):
+        self.fields.reset_all()
+        self.save_hint.setText("Defaults restored. Save to apply.")
 
     def set_models(self, model_ids):
         for key, widget in self.models.items():
@@ -170,30 +165,13 @@ class PreferencesPage(QWidget):
 
     def update_settings(self, settings):
         self.settings = settings
-        self.api_proxy_url.setText(settings.api_proxy_url)
-        for key, widget in self.models.items():
-            widget.setCurrentText(getattr(settings, key))
-        for widget, value in [
-            (self.input_language, settings.input_language),
-            (self.output_language, settings.output_language),
-        ]:
-            index = widget.findData(value)
-            if index >= 0:
-                widget.setCurrentIndex(index)
-            else:
-                widget.setCurrentText(value)
-        self.target_language.setCurrentText(settings.target_language)
-        self.voice.setCurrentText(settings.voice)
-        self.chunk_seconds.setValue(settings.chunk_seconds)
-        self.microphone_source.set_value(settings.microphone_source)
-        self.output_source.set_value(settings.output_source)
-        self.font_size.setValue(settings.font_size)
-        self.opacity.setValue(settings.overlay_opacity)
-        self.drawing_auto_send.setChecked(settings.drawing_auto_send)
-        self.drawing_delay.setValue(settings.drawing_debounce_ms / 1000)
-        self.drawing_delay.setEnabled(settings.drawing_auto_send)
-        for mode, widget in self.shortcuts.items():
-            widget.setKeySequence(QKeySequence(settings.shortcuts.get(mode, "")))
+        self.fields.update(settings)
+        self.drawing_delay.setEnabled(self.drawing_auto_send.isChecked())
+        self.save_hint.setText(
+            "Unsaved changes. Save to apply."
+            if self.fields.has_pending
+            else "Save to apply changes."
+        )
 
     def set_sources(self, sources):
         self.microphone_source.set_sources(sources)

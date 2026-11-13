@@ -6,14 +6,14 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QHBoxLayout,
-    QPlainTextEdit,
     QSplitter,
     QWidget,
 )
 
 from .audio_controls import AudioLevel
-from .common import TextPane, button, label, title_block
-from .sections import ExpandableSection, tool_layout
+from .common import button, label, title_block
+from .entries import EntryList
+from .sections import tool_layout
 
 
 class CapturePage(QWidget):
@@ -22,6 +22,7 @@ class CapturePage(QWidget):
     file_requested = Signal(str, bool)
     overlay_requested = Signal()
     options_changed = Signal()
+    speech_requested = Signal(str)
 
     def __init__(self, mode: str, settings):
         super().__init__()
@@ -71,20 +72,8 @@ class CapturePage(QWidget):
         layout.addLayout(options)
         self.level = AudioLevel()
         layout.addWidget(self.level)
-        self.advanced = ExpandableSection("Recognition options")
-        self.advanced.body_layout.addWidget(label("Instructions / vocabulary", True))
-        self.instructions = QPlainTextEdit(getattr(settings, f"{mode}_instructions"))
-        self.instructions.setAccessibleName("Recognition instructions")
-        self.instructions.setPlaceholderText(
-            "Names, vocabulary, or context to recognize accurately…"
-        )
-        self.instructions.setFixedHeight(75)
-        self.advanced.body_layout.addWidget(self.instructions)
-        self.advanced.body_layout.addWidget(
-            label("Choose models, languages, devices, and chunk duration in Preferences.", True)
-        )
-        layout.addWidget(self.advanced)
-        self.results = TextPane("Transcript", "Your transcript appears here.")
+        self.results = EntryList("Transcript", "Your transcript appears here.")
+        self.results.speech_requested.connect(self.speech_requested)
         self.translations = None
         if is_input:
             layout.addWidget(self.results, 1)
@@ -92,7 +81,8 @@ class CapturePage(QWidget):
             self.splitter = QSplitter()
             self.splitter.setHandleWidth(12)
             self.splitter.addWidget(self.results)
-            self.translations = TextPane("Translation", "Translated captions appear here.")
+            self.translations = EntryList("Translation", "Translated captions appear here.")
+            self.translations.speech_requested.connect(self.speech_requested)
             self.splitter.addWidget(self.translations)
             self.splitter.setSizes([450, 450])
             self.translations.setVisible(settings.translation_visible)
@@ -107,6 +97,7 @@ class CapturePage(QWidget):
         self.stop_button.clicked.connect(self.stop_requested)
         self.import_button.clicked.connect(self._import)
         self.option.toggled.connect(self._option_changed)
+        self.apply_settings(settings)
 
     def _option_changed(self, checked):
         if self.translations:
@@ -135,12 +126,11 @@ class CapturePage(QWidget):
             self.level.set_level(0)
 
     def clear(self):
-        self.results.text.clear()
+        self.results.clear()
         if self.translations:
-            self.translations.text.clear()
+            self.translations.clear()
 
     def apply_settings(self, settings):
-        self.instructions.setPlainText(getattr(settings, f"{self.mode}_instructions"))
         self.capture_type.setCurrentIndex(int(getattr(settings, f"{self.mode}_chunked")))
         visible = settings.auto_paste if self.mode == "input" else settings.translation_visible
         self.option.blockSignals(True)
@@ -149,3 +139,4 @@ class CapturePage(QWidget):
         self.model_label.setText(getattr(settings, f"{self.mode}_model"))
         if self.translations:
             self.translations.setVisible(visible)
+            self.results.setVisible(settings.transcript_visible)

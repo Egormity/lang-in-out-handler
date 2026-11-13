@@ -11,7 +11,8 @@ from .drawing_workspace import DrawingWorkspace
 class DrawingPage(QWidget):
     requested = Signal(bytes, int)
     cancel_requested = Signal()
-    options_changed = Signal()
+    speech_requested = Signal(str)
+    speech_stop_requested = Signal()
 
     def __init__(self, settings):
         super().__init__()
@@ -41,19 +42,17 @@ class DrawingPage(QWidget):
         # Keep a single set of public controls for the existing controller interface.
         for name in (
             "canvas",
-            "instructions",
             "result",
-            "auto_send",
             "send_button",
             "undo_button",
             "clear_button",
-            "pen",
             "status",
-            "advanced_toggle",
         ):
             setattr(self, name, getattr(self.workspace, name))
         layout.addWidget(self.workspace, 1)
-        self.floating = DrawingWindow()
+        self.result.speech_requested.connect(self.speech_requested)
+        self.result.speech_stop_requested.connect(self.speech_stop_requested)
+        self.floating = DrawingWindow(settings.drawing_on_top)
         self.floating.dock_requested.connect(self.dock_workspace)
         self.destroyed.connect(self.floating.deleteLater)
         self.is_floating = False
@@ -69,7 +68,6 @@ class DrawingPage(QWidget):
         placeholder_layout.addStretch()
         self.placeholder.hide()
         layout.addWidget(self.placeholder, 1)
-        self.pen.valueChanged.connect(lambda value: setattr(self.canvas, "pen_width", value))
         self.undo_button.clicked.connect(self.canvas.undo)
         self.clear_button.clicked.connect(self.canvas.clear)
         self.send_button.clicked.connect(self.send)
@@ -78,7 +76,6 @@ class DrawingPage(QWidget):
         self.timer.setInterval(settings.drawing_debounce_ms)
         self.timer.timeout.connect(self.send)
         self.canvas.changed.connect(self._canvas_changed)
-        self.auto_send.toggled.connect(self._auto_changed)
         self.undo_button.setEnabled(False)
         self.clear_button.setEnabled(False)
 
@@ -117,7 +114,7 @@ class DrawingPage(QWidget):
         self.undo_button.setEnabled(not blank)
         self.clear_button.setEnabled(not blank)
         self.send_button.setEnabled(not blank and not self.canvas.is_drawing)
-        self.result.text.clear()
+        self.result.clear()
         if blank:
             self.status.setText("Draw something to begin.")
             self.cancel_requested.emit()
@@ -125,21 +122,17 @@ class DrawingPage(QWidget):
             self.status.setText("Drawing…")
         else:
             self.status.setText(
-                "Waiting to recognize…" if self.auto_send.isChecked() else "Ready to send."
+                "Waiting to recognize…" if self.settings.drawing_auto_send else "Ready to send."
             )
             self._schedule()
 
     def _schedule(self):
-        if self.auto_send.isChecked() and not self.canvas.is_blank and not self.canvas.is_drawing:
+        if (
+            self.settings.drawing_auto_send
+            and not self.canvas.is_blank
+            and not self.canvas.is_drawing
+        ):
             self.timer.start(self.settings.drawing_debounce_ms)
-
-    def _auto_changed(self, enabled):
-        self.timer.stop()
-        if not enabled:
-            self.cancel_requested.emit()
-        self.options_changed.emit()
-        if enabled:
-            self._schedule()
 
     def send(self):
         self.timer.stop()
@@ -147,26 +140,30 @@ class DrawingPage(QWidget):
             return
         self.requested.emit(self.canvas.snapshot(), self.canvas.revision)
 
-    def set_result(self, text, revision):
+    def set_result(self, items, revision):
         if revision == self.canvas.revision:
-            self.result.text.setPlainText(text)
-            self.status.setText("Recognition ready. You can edit or copy the text.")
+            self.result.set_items(items)
+            self.status.setText(
+                "Choose a reading below." if items else "No readable handwriting found."
+            )
 
     def set_busy(self, busy):
         self.busy = busy
         if busy:
             self.status.setText("Recognizing handwriting…")
-        elif not self.result.text.toPlainText() and not self.canvas.is_blank:
+        elif self.status.text() == "Recognizing handwriting…" and not self.canvas.is_blank:
             self.status.setText("Ready to send.")
 
+    def set_speech_active(self, active):
+        self.result.set_speech_active(active)
+
     def update_settings(self, settings):
-        was_enabled = self.auto_send.isChecked()
+        was_enabled = self.settings.drawing_auto_send
         delay_changed = self.settings.drawing_debounce_ms != settings.drawing_debounce_ms
         self.settings = settings
-        self.instructions.setPlainText(settings.drawing_instructions)
-        self.auto_send.blockSignals(True)
-        self.auto_send.setChecked(settings.drawing_auto_send)
-        self.auto_send.blockSignals(False)
+        self.canvas.pen_width = settings.drawing_pen_width
+        if self.floating.pin_control.desired != settings.drawing_on_top:
+            self.floating.pin_control.request(settings.drawing_on_top)
         if was_enabled and not settings.drawing_auto_send:
             self.timer.stop()
             self.cancel_requested.emit()

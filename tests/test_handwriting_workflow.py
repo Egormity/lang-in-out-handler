@@ -88,7 +88,7 @@ def test_changed_revision_discards_stale_recognition(workflow, qtbot, qapp, monk
         workers.append(QThread.currentThread())
         started.set()
         assert release.wait(2)
-        return "old writing"
+        return ["old writing"]
 
     install_service(monkeypatch, recognize)
     try:
@@ -115,7 +115,7 @@ def test_fast_drawing_keeps_only_one_active_and_latest_pending_snapshot(
         calls.append(png)
         started[png].set()
         assert release[png].wait(3)
-        return png.decode() + " recognized"
+        return [png.decode() + " recognized", "alternative"]
 
     install_service(monkeypatch, recognize)
     try:
@@ -134,8 +134,8 @@ def test_fast_drawing_keeps_only_one_active_and_latest_pending_snapshot(
         release[b"latest"].set()
         qtbot.waitUntil(lambda: workflow.job is None)
         assert calls == [b"first", b"latest"]
-        assert workflow.c.window.results == [("latest recognized", 3)]
-        assert len(workflow.c.history) == 1
+        assert workflow.c.window.results == [(["latest recognized", "alternative"], 3)]
+        assert len(workflow.c.history) == 2
         assert workflow.c.history[0][:2] == ("drawing", "latest recognized")
     finally:
         for event in release.values():
@@ -153,7 +153,7 @@ def test_manual_mode_or_clear_cancel_active_and_pending_work(
         calls.append(png)
         started.set()
         assert release.wait(2)
-        return "canceled writing"
+        return ["canceled writing"]
 
     install_service(monkeypatch, recognize)
     try:
@@ -178,7 +178,7 @@ def test_manual_mode_or_clear_cancel_active_and_pending_work(
 def test_cancel_after_worker_emits_still_prevents_ui_and_history_updates(
     workflow, qapp, monkeypatch
 ):
-    install_service(monkeypatch, lambda png: "already queued result")
+    install_service(monkeypatch, lambda png: ["already queued result"])
     workflow.recognize(b"canvas", 1)
     # Avoid processing Qt events until the worker has emitted its result.
     assert workflow.c.jobs.pool.waitForDone(2000)
@@ -200,8 +200,8 @@ def test_cancel_then_manual_send_can_restart_with_same_canvas_revision(
         if len(calls) == 1:
             started.set()
             assert release.wait(2)
-            return "canceled"
-        return "manual result"
+            return ["canceled"]
+        return ["manual result"]
 
     install_service(monkeypatch, recognize)
     try:
@@ -213,7 +213,7 @@ def test_cancel_then_manual_send_can_restart_with_same_canvas_revision(
         qtbot.waitUntil(lambda: len(workflow.c.history) == 1)
         qtbot.waitUntil(lambda: workflow.job is None)
         assert calls == [b"canvas", b"canvas"]
-        assert workflow.c.window.results == [("manual result", 1)]
+        assert workflow.c.window.results == [(["manual result"], 1)]
         assert workflow.c.history[0][1] == "manual result"
     finally:
         release.set()

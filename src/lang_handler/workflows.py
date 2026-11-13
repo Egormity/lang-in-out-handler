@@ -6,7 +6,7 @@ import tempfile
 from copy import deepcopy
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QTimer
+from PySide6.QtCore import QObject, QTimer, Signal
 
 from .api import OpenAIService
 from .audio import audio_file_chunks
@@ -14,6 +14,8 @@ from .desktop import play_audio
 
 
 class Workflows(QObject):
+    speech_active_changed = Signal(bool)
+
     def __init__(self, controller):
         super().__init__(controller)
         self.c = controller
@@ -144,6 +146,8 @@ class Workflows(QObject):
         )
 
     def speak(self, text):
+        if not text.strip():
+            return
         key = self.c.require_key()
         if not key:
             return
@@ -155,6 +159,7 @@ class Workflows(QObject):
         settings = deepcopy(self.c.settings)
         self.stop_speech()
         self.c.status("Generating speech…")
+        self.speech_active_changed.emit(True)
 
         def work(cancel, progress):
             service = OpenAIService(key, proxy=settings.api_proxy_url or None)
@@ -176,9 +181,11 @@ class Workflows(QObject):
             self.c.remember("tts", text, "", settings.tts_model)
             self._play(path)
 
-        self.speech_job = self.c.jobs.submit(
-            work, success, self.c.fail, finished=lambda: setattr(self, "speech_job", None)
-        )
+        def done():
+            self.speech_job = None
+            self.speech_active_changed.emit(self.player is not None)
+
+        self.speech_job = self.c.jobs.submit(work, success, self.c.fail, finished=done)
 
     def replay(self, path):
         """Replay existing speech through the same player controlled by Stop."""
@@ -192,6 +199,7 @@ class Workflows(QObject):
         try:
             self.player = play_audio(path)
             self.playback_timer.start()
+            self.speech_active_changed.emit(True)
             self.c.status("Playing AI-generated speech.")
         except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
             self.c.fail(str(exc))
@@ -201,6 +209,7 @@ class Workflows(QObject):
             code = self.player.returncode
             self.player = None
             self.playback_timer.stop()
+            self.speech_active_changed.emit(False)
             if code:
                 self.c.fail("Audio playback failed. You can still save the generated WAV file.")
             else:
@@ -213,6 +222,7 @@ class Workflows(QObject):
             self.player.terminate()
         self.player = None
         self.playback_timer.stop()
+        self.speech_active_changed.emit(False)
 
     def cancel_import(self, mode):
         job = self.imports.pop(mode, None)

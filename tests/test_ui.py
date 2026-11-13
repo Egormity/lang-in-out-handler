@@ -11,7 +11,7 @@ from lang_handler.ui.main_window import MainWindow
 from lang_handler.ui.overlay import CaptionOverlay
 
 
-def test_capture_commits_instructions_before_start(qtbot):
+def test_capture_uses_saved_preference_instructions(qtbot):
     window = MainWindow(Settings(), True)
     qtbot.addWidget(window)
     order = []
@@ -20,7 +20,10 @@ def test_capture_commits_instructions_before_start(qtbot):
     )
     window.capture_requested.connect(lambda mode, chunks: order.append((mode, chunks)))
     page = window.pages["output"]
-    page.instructions.setPlainText("Names: Sakura and Aoi")
+    preferences = window.pages["preferences"]
+    preferences.instructions["output_instructions"].setPlainText("Names: Sakura and Aoi")
+    preferences.save_preferences.click()
+    order.clear()
     page.start_button.click()
     assert order == [("settings", "Names: Sakura and Aoi"), ("output", True)]
 
@@ -31,28 +34,24 @@ def test_split_results_do_not_duplicate_transcript(qtbot):
     window.append_result("output", "こんにちは")
     window.append_result("output", "", "Hello")
     page = window.pages["output"]
-    assert page.results.text.toPlainText() == "こんにちは"
-    assert page.translations.text.toPlainText() == "Hello"
+    assert page.results.toPlainText() == "こんにちは"
+    assert page.translations.toPlainText() == "Hello"
     window.set_recording("output", True)
     assert not page.start_button.isEnabled()
     assert page.stop_button.isEnabled()
 
 
-def test_overlay_translation_toggle_controls_visibility_and_generation(qtbot):
+def test_overlay_visibility_is_controlled_from_preferences(qtbot):
     overlay = CaptionOverlay(Settings())
     qtbot.addWidget(overlay)
     overlay.show()
-    overlay.translation_toggle.setChecked(False)
-    assert not overlay.settings.translation_visible
-    assert not overlay.settings.translation_enabled
-    assert not hasattr(overlay, "generate_toggle")
+    overlay.update_settings(Settings(translation_visible=False, translation_enabled=False))
     assert overlay.translation.isHidden()
-    overlay.transcript_toggle.setChecked(False)
+    overlay.update_settings(Settings(transcript_visible=False, translation_visible=False))
     assert overlay.empty.isVisible()
     overlay.append_caption("日本語", "Japanese")
-    overlay.translation_toggle.setChecked(True)
-    assert overlay.settings.translation_enabled
-    assert overlay.translation.text.toPlainText() == "Japanese"
+    overlay.update_settings(Settings())
+    assert overlay.translation.toPlainText() == "Japanese"
     assert overlay.translation.isVisible()
     assert overlay.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
     stopped = QSignalSpy(overlay.stop_requested)
@@ -66,18 +65,20 @@ def test_preferences_key_mask_and_model_refresh(qtbot):
     qtbot.addWidget(window)
     preferences = window.pages["preferences"]
     assert preferences.api_key.echoMode() == QLineEdit.EchoMode.Password
-    preferences.models["input_model"].setCurrentText("custom-transcribe-model")
+    window.update_settings(Settings(input_model="custom-transcribe-model"))
     window.set_models(["gpt-transcribe", "gpt-live-transcribe", "gpt-6-luna", "gpt-4o-mini-tts"])
     assert preferences.models["input_model"].currentText() == "custom-transcribe-model"
     assert preferences.models["input_model"].findText("gpt-live-transcribe") < 0
     assert preferences.models["translation_model"].findText("gpt-6-luna") >= 0
 
 
-def test_saved_preferences_keep_unsaved_mode_instructions(qtbot):
+def test_preferences_save_applies_instructions_to_all_modes(qtbot):
     window = MainWindow(Settings(), True)
     qtbot.addWidget(window)
-    window.pages["translate"].instructions.setPlainText("Use polite Russian.")
-    window._save_preferences(replace(window.settings, target_language="Russian"))
+    preferences = window.pages["preferences"]
+    preferences.instructions["translation_instructions"].setPlainText("Use polite Russian.")
+    preferences.target_language.setCurrentText("Russian")
+    preferences.save_preferences.click()
     assert window.settings.target_language == "Russian"
     assert window.settings.translation_instructions == "Use polite Russian."
 
@@ -100,7 +101,7 @@ def test_history_selection_and_navigation(qtbot):
     window.show_page("history")
     page = window.pages["history"]
     page.table.selectRow(0)
-    assert "Hello" in page.detail.text.toPlainText()
+    assert "Hello" in page.translation.text.toPlainText()
     assert window.stack.currentWidget() is page
 
 
@@ -140,8 +141,9 @@ def test_device_names_are_saved_and_friendly_labels_displayed(qtbot):
     assert preferences.output_source.currentText() == "Desk speakers"
     preferences.microphone_source.setCurrentIndex(0)
     assert preferences.collect().microphone_source == ""
+    assert not preferences.output_source.isEditable()
     preferences.output_source.setEditText("custom.monitor")
-    assert preferences.collect().output_source == "custom.monitor"
+    assert preferences.collect().output_source == "speakers.monitor"
 
 
 def test_settings_update_does_not_emit_feedback_and_key_clears(qtbot):
@@ -173,11 +175,11 @@ def test_overlay_clear_preserves_session_controls(qtbot):
     overlay.append_caption("日本語", "Japanese")
     stopped = QSignalSpy(overlay.stop_requested)
     overlay.clear_button.click()
-    assert overlay.transcript.text.toPlainText() == ""
-    assert overlay.translation.text.toPlainText() == ""
+    assert overlay.transcript.toPlainText() == ""
+    assert overlay.translation.toPlainText() == ""
     assert stopped.count() == 0
     assert overlay.settings.translation_enabled
-    assert overlay.transcript_toggle.focusPolicy() == Qt.FocusPolicy.TabFocus
+    assert not hasattr(overlay, "transcript_toggle")
 
 
 def test_remove_key_and_tts_model_choices(qtbot):
@@ -205,7 +207,7 @@ def test_remove_key_and_tts_model_choices(qtbot):
     assert choices.findText("gpt-realtime-2.1-mini") >= 0
     assert choices.findText("gpt-realtime-translate") < 0
     assert choices.findText("gpt-realtime-whisper") < 0
-    assert window.pages["translate"].instructions.tabChangesFocus()
+    assert preferences.instructions["translation_instructions"].tabChangesFocus()
 
 
 def test_speech_replay_is_forwarded_to_controller(qtbot):
@@ -213,7 +215,7 @@ def test_speech_replay_is_forwarded_to_controller(qtbot):
     qtbot.addWidget(window)
     replay = QSignalSpy(window.speech_replay_requested)
     generated = QSignalSpy(window.speech_requested)
-    page = window.pages["translate"]
+    page = window.speech_controls
     assert not page.play.isEnabled()
     window.set_speech("/tmp/unit-test-speech.wav")
     page.play.click()
@@ -271,9 +273,10 @@ def test_proxy_preferences_round_trip_and_pending_connection_value(qtbot):
     preferences = window.pages["preferences"]
     assert preferences.api_proxy_url.text() == "http://proxy.example:8080"
     preferences.api_proxy_url.setText("  socks5://proxy.example:1080  ")
-    preferences.models["input_model"].setCurrentText("unsaved-model-placeholder")
+    preferences.models["input_model"].addItem("test-transcribe-model")
+    preferences.models["input_model"].setCurrentText("test-transcribe-model")
     assert window.connection_proxy_url() == "socks5://proxy.example:1080"
-    assert preferences.models["input_model"].currentText() == "unsaved-model-placeholder"
+    assert preferences.models["input_model"].currentText() == "test-transcribe-model"
     saved = preferences.collect()
     assert saved.api_proxy_url == "socks5://proxy.example:1080"
     window.update_settings(saved)
@@ -300,8 +303,10 @@ def test_translate_contains_speech_for_both_text_panes(qtbot):
     assert window.stack.currentWidget() is page
     window.set_source_text("tts", "Original words")
     window.set_translation("Translated words")
-    page.tts_instructions.setPlainText("Speak slowly.")
-    page.target.setCurrentText("Japanese")
+    preferences = window.pages["preferences"]
+    preferences.instructions["tts_instructions"].setPlainText("Speak slowly.")
+    preferences.target_language.setCurrentText("Japanese")
+    preferences.save_preferences.click()
     requested = QSignalSpy(window.speech_requested)
     page.speak_original.click()
     page.speak_translation.click()
@@ -309,7 +314,7 @@ def test_translate_contains_speech_for_both_text_panes(qtbot):
     assert requested.at(1) == ["Translated words"]
     assert window.settings.tts_instructions == "Speak slowly."
     assert window.settings.target_language == "Japanese"
-    assert not page.advanced.toggle.isChecked()
+    assert not hasattr(page, "tts_instructions")
 
 
 def test_caption_translation_option_updates_generation_and_visibility(qtbot):
@@ -351,9 +356,7 @@ def test_preferences_are_grouped_into_five_tabs(qtbot):
     }
 
 
-def test_tool_layouts_do_not_overlap_at_minimum_window_size(qtbot):
-    from PySide6.QtCore import QPoint
-
+def test_tool_layouts_fit_at_minimum_window_size(qtbot):
     window = MainWindow(Settings(), True)
     qtbot.addWidget(window)
     window.show()
@@ -362,19 +365,11 @@ def test_tool_layouts_do_not_overlap_at_minimum_window_size(qtbot):
         for mode in ("input", "output", "translate"):
             window.show_page(mode)
             page = window.pages[mode]
-            for expanded in (False, True):
-                page.advanced.toggle.setChecked(expanded)
-                qtbot.wait(20)
-                content = page.splitter if mode in ("output", "translate") else page.results
-                content_top = content.mapTo(page, QPoint(0, 0)).y()
-                advanced_bottom = page.advanced.mapTo(page, QPoint(0, page.advanced.height())).y()
-                assert content_top >= advanced_bottom
-                assert content.height() >= 100
-                assert page.scroll.horizontalScrollBar().maximum() == 0
-                if mode == "translate":
-                    footer_top = page.speech_controls.mapTo(page, QPoint(0, 0)).y()
-                    content_bottom = content.mapTo(page, QPoint(0, content.height())).y()
-                    assert footer_top >= content_bottom
+            qtbot.wait(20)
+            content = page.splitter if mode in ("output", "translate") else page.results
+            assert content.height() >= 100
+            assert page.scroll.horizontalScrollBar().maximum() == 0
+            assert not hasattr(page, "instructions")
 
 
 def test_preferences_tabs_and_footer_remain_separate_at_minimum_size(qtbot):

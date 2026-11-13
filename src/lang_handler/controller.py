@@ -3,6 +3,7 @@
 import subprocess
 import sys
 from copy import deepcopy
+from dataclasses import replace
 
 from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QApplication
@@ -61,8 +62,11 @@ class Controller(QObject):
         window.models_requested.connect(self.test_key)
         window.history_refresh_requested.connect(self.refresh_history)
         window.history_delete_requested.connect(self.delete_history)
-        overlay.settings_changed.connect(self.save_settings)
         overlay.stop_requested.connect(lambda: self.stop("output"))
+        overlay.speech_requested.connect(self.workflows.speak)
+        overlay.speech_stop_requested.connect(self.workflows.stop_speech)
+        self.workflows.speech_active_changed.connect(window.set_speech_active)
+        self.workflows.speech_active_changed.connect(overlay.set_speech_active)
         self.refresh_history()
         self.window.set_key_status(self.credentials.backend_label if self.key else "No API key saved.")
 
@@ -124,6 +128,11 @@ class Controller(QObject):
         # unsaved model/language controls in the preferences page.
         self.settings.api_proxy_url = self.window.connection_proxy_url()
         self.store.save_settings(self.settings)
+        # Commit this connection field without applying other pending preferences.
+        self.window.settings = replace(
+            self.window.settings, api_proxy_url=self.settings.api_proxy_url
+        )
+        self.window.pages["preferences"].update_settings(self.window.settings)
         self.status("Checking OpenAI model access…")
         proxy = self.settings.api_proxy_url or None
 
@@ -239,7 +248,7 @@ class Controller(QObject):
         self.overlay.raise_()
 
     def action(self, action):
-        if action in {"input", "output", "translate", "tts", "drawing"}:
+        if action in {"input", "output", "translate"}:
             self.window.sync_mode_settings()
         if action in self.captures:
             if self.captures[action].is_running or action in self.workflows.imports:

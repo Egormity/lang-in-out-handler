@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLineEdit,
     QMessageBox,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -24,6 +25,7 @@ MODE_NAMES = {
 class HistoryPage(QWidget):
     refresh_requested = Signal()
     delete_requested = Signal()
+    speech_requested = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -56,8 +58,15 @@ class HistoryPage(QWidget):
         self.table.verticalHeader().hide()
         self.table.itemSelectionChanged.connect(self._selected)
         layout.addWidget(self.table, 1)
-        self.detail = TextPane("Selected entry", "Select an entry to see its full text.")
-        layout.addWidget(self.detail, 1)
+        self.details = QSplitter()
+        self.detail = TextPane("Original", "Select an entry to see its full text.")
+        self.translation = TextPane("Translation", "This entry has no translation.")
+        for pane in (self.detail, self.translation):
+            pane.speech_requested.connect(self.speech_requested)
+            self.details.addWidget(pane)
+        self.details.setSizes([450, 450])
+        self.translation.hide()
+        layout.addWidget(self.details, 1)
         row = QHBoxLayout()
         row.addWidget(
             label("Audio files and API credentials are not included in this history.", True), 1
@@ -108,15 +117,17 @@ class HistoryPage(QWidget):
             self._selected()
         else:
             self.detail.text.clear()
+            self.translation.text.clear()
+            self.translation.hide()
 
     def _selected(self):
         row = self.table.currentRow()
         if 0 <= row < len(self.visible_entries):
             entry = self.visible_entries[row]
-            text = entry.get("source_text", "")
-            if entry.get("translated_text"):
-                text += "\n\n── Translation ──\n\n" + entry["translated_text"]
-            self.detail.text.setPlainText(text)
+            self.detail.text.setPlainText(entry.get("source_text", ""))
+            translation = entry.get("translated_text", "")
+            self.translation.text.setPlainText(translation)
+            self.translation.setVisible(bool(translation))
 
     def _delete(self):
         choice = QMessageBox.question(

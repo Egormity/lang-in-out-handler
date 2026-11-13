@@ -10,7 +10,7 @@ class Settings:
     output_model: str = "gpt-transcribe"
     translation_model: str = "gpt-6-luna"
     tts_model: str = "gpt-realtime-2.1-mini"
-    drawing_model: str = "gpt-6.1-sol"
+    drawing_model: str = "gpt-6-luna"
     input_language: str = ""
     output_language: str = "ja"
     target_language: str = "English"
@@ -18,9 +18,11 @@ class Settings:
     output_instructions: str = ""
     translation_instructions: str = "Translate naturally. Preserve names, tone, and meaning. Return only the translation."
     tts_instructions: str = "Speak naturally and clearly."
-    drawing_instructions: str = "Transcribe the handwriting exactly. Return only recognized text. Do not translate or explain."
+    drawing_instructions: str = "Recognize the handwriting. Return plausible text candidates, most likely first. Preserve the original language. Do not translate or explain."
     drawing_auto_send: bool = True
     drawing_debounce_ms: int = 1200
+    drawing_pen_width: int = 4
+    drawing_on_top: bool = True
     voice: str = "coral"
     chunk_seconds: float = 5.0
     input_chunked: bool = False
@@ -33,6 +35,7 @@ class Settings:
     output_source: str = ""
     font_size: int = 21
     overlay_opacity: float = 0.95
+    overlay_on_top: bool = True
     shortcuts: dict[str, str] = field(default_factory=lambda: {
         "input": "Meta+Alt+I", "output": "Meta+Alt+O",
         "translate": "Meta+Alt+T", "tts": "Meta+Alt+V",
