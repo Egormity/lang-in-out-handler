@@ -70,7 +70,7 @@ class DrawingPage(QWidget):
         self.result.speech_requested.connect(self.speech_requested)
         self.result.audio_requested.connect(self.audio_requested)
         self.result.speech_stop_requested.connect(self.speech_stop_requested)
-        self.floating = DrawingWindow(settings.drawing_on_top)
+        self.floating = DrawingWindow(settings.drawing_on_top, settings.drawing_opacity)
         self.floating.dock_requested.connect(self.dock_workspace)
         self.destroyed.connect(self.floating.deleteLater)
         self.is_floating = False
@@ -136,7 +136,10 @@ class DrawingPage(QWidget):
         self.redo_button.setEnabled(self.canvas.can_redo)
         self.clear_button.setEnabled(not blank)
         self._update_recognize_button()
-        self.result.clear()
+        # Keep the last useful readings (and their copy/audio controls) while
+        # the next drawing revision is being written or recognized.
+        if blank or not self.result.items:
+            self.result.clear()
         self._update_language_requirement()
         if blank:
             self.cancel_requested.emit()
@@ -175,7 +178,7 @@ class DrawingPage(QWidget):
             self.result.empty.show()
 
     def set_result(self, items, revision):
-        if revision == self.canvas.revision:
+        if revision == self.canvas.revision and (items or not self.result.items):
             self.result.set_items(items)
 
     def set_busy(self, busy):
@@ -210,6 +213,7 @@ class DrawingPage(QWidget):
         set_handwriting_language_provider(self.language, settings.drawing_provider)
         self.canvas.pen_width = settings.drawing_pen_width
         self.canvas.set_theme(settings.drawing_canvas_theme)
+        self.floating.set_background_opacity(settings.drawing_opacity)
         if self.floating.pin_control.desired != settings.drawing_on_top:
             self.floating.pin_control.request(settings.drawing_on_top)
         if language_changed or provider_changed:

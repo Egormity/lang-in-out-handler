@@ -1,5 +1,6 @@
 """Mouse and tablet handwriting canvas with revisioned, vector-backed strokes."""
 
+import math
 from dataclasses import dataclass, field
 from time import monotonic_ns
 
@@ -35,6 +36,7 @@ class DrawingCanvas(TabletInputMixin, QWidget):
         self.is_drawing = False
         self.pen_width = 4
         self.theme = "light"
+        self.background_opacity = 1.0
         self.initialize_input()
         self.setMinimumSize(350, 210)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -137,10 +139,25 @@ class DrawingCanvas(TabletInputMixin, QWidget):
         self.theme = theme if theme in {"light", "dark"} else "light"
         self.update()
 
+    def set_background_opacity(self, opacity):
+        """Change only the displayed background; ink and recognition stay opaque."""
+        opacity = float(opacity)
+        self.background_opacity = min(1.0, max(0.0, opacity)) if math.isfinite(opacity) else 1.0
+        self.update()
+
     def _paint_strokes(self, painter, width, height, *, preview=False):
         # Keep API snapshots canonical so appearance never changes recognition input.
         dark = preview and self.theme == "dark"
-        painter.fillRect(0, 0, width, height, QColor("#222725" if dark else "white"))
+        background = QColor("#222725" if dark else "white")
+        if preview:
+            background.setAlpha(round(self.background_opacity * 255))
+            # Replace the window's alpha beneath the canvas, rather than stacking
+            # two translucent backgrounds into a more opaque surface.
+            painter.save()
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+        painter.fillRect(0, 0, width, height, background)
+        if preview:
+            painter.restore()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         for pen_width, points in self.strokes:
             pen = QPen(

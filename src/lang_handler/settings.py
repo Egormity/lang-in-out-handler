@@ -40,6 +40,7 @@ class Settings:
     drawing_pen_width: int = 4
     drawing_canvas_theme: str = "light"
     drawing_on_top: bool = True
+    drawing_opacity: float = 1.0
     voice: str = "coral"
     input_chunk_seconds: float = 5.0
     output_chunk_seconds: float = 5.0

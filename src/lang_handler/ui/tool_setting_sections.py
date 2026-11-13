@@ -145,4 +145,15 @@ def handwriting(page, settings, layout):
     )
     number(page, form, "Pen width", "drawing_pen_width", minimum=1, maximum=16, suffix=" px")
     toggle(page, form, "Keep on top", "drawing_on_top")
+    page.drawing_opacity = NumberInput(
+        0, 100, step=5, suffix="%", name="Floating background opacity"
+    )
+    page.drawing_opacity.setToolTip(
+        "Floating canvas and window background opacity. Ink, text, and controls stay readable."
+    )
+    page.fields.add(
+        form, "Floating background opacity", "drawing_opacity", page.drawing_opacity,
+        read=lambda: page.drawing_opacity.value() / 100,
+        write=lambda value: page.drawing_opacity.setValue(round(value * 100)),
+    )
     form.addRow(label("When automatic recognition is off, use Send to transcribe on the canvas.", True))

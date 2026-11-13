@@ -1,5 +1,6 @@
 """Handwriting progress stays on its top action in docked and floating views."""
 
+import pytest
 from PySide6.QtCore import QPoint, QPointF
 from PySide6.QtTest import QSignalSpy
 
@@ -65,5 +66,45 @@ def test_floating_canvas_has_the_same_progress_action_and_no_footer(qtbot):
         assert not page.send_button.isEnabled()
         assert page.send_button.text() == "Recognize"
         page.set_busy(False)
+    finally:
+        page.shutdown()
+
+
+@pytest.mark.parametrize("floating", [False, True])
+def test_previous_readings_stay_usable_until_latest_drawing_has_new_candidates(qtbot, floating):
+    page = DrawingPage(Settings(drawing_auto_send=False, drawing_on_top=False))
+    qtbot.addWidget(page)
+    page.show()
+    if floating:
+        page.show_floating()
+    try:
+        add_stroke(page.canvas)
+        previous_revision = page.canvas.revision
+        page.set_result(["とも", "友"], previous_revision)
+        previous_rows = list(page.result.rows)
+        qtbot.waitUntil(lambda: all(row.isVisible() for row in previous_rows))
+        page.canvas.begin_stroke(QPointF(120, 30))
+        page.canvas.extend_stroke(QPointF(140, 50))
+        assert page.result.rows == previous_rows
+        assert all(row.isVisible() for row in previous_rows)
+        page.canvas.end_stroke(QPointF(160, 70))
+        page.set_busy(True)
+        page.set_result(["obsolete response"], previous_revision)
+        assert page.result.items == ["とも", "友"]
+        assert page.result.rows == previous_rows
+        assert all(row.copy.isEnabled() and row.speak.isEnabled() for row in previous_rows)
+        # An empty response or failed request must not erase the last useful guesses.
+        page.set_result([], page.canvas.revision)
+        page.set_busy(False)
+        assert page.result.rows == previous_rows
+        page.canvas.undo()
+        page.canvas.redo()
+        assert page.result.rows == previous_rows
+        page.set_result(["ともだち"], page.canvas.revision)
+        assert page.result.items == ["ともだち"]
+        assert page.result.rows != previous_rows
+        page.canvas.clear()
+        assert page.result.items == []
+        assert not page.result.empty.isHidden()
     finally:
         page.shutdown()

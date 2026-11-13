@@ -1,21 +1,22 @@
 """An independent, pinnable host for the shared handwriting editor."""
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QVBoxLayout
 
 from ..window_pin import WindowPin
 from .icons import icon_button
 from .theme import STYLE
+from .translucent_window import TRANSLUCENT_CONTENT_STYLE, TranslucentWindow
 
 
-class DrawingWindow(QWidget):
+class DrawingWindow(TranslucentWindow):
     dock_requested = Signal()
 
-    def __init__(self, on_top=True):
+    def __init__(self, on_top=True, opacity=1.0):
         super().__init__()
         self.setWindowTitle("Lang In/Out · Handwriting")
         self.setWindowFlags(Qt.WindowType.Tool)
-        self.setStyleSheet(STYLE)
+        self.setStyleSheet(STYLE + TRANSLUCENT_CONTENT_STYLE)
         self.resize(650, 420)
         self.setMinimumSize(440, 260)
         layout = QVBoxLayout(self)
@@ -23,6 +24,7 @@ class DrawingWindow(QWidget):
         layout.setSpacing(4)
         self.workspace = None
         self.scroll = None
+        self.set_background_opacity(opacity)
         self.dock_button = icon_button("dock", "Dock canvas")
         self.dock_button.setObjectName("quiet")
         self.dock_button.clicked.connect(self.dock_requested)
@@ -40,11 +42,17 @@ class DrawingWindow(QWidget):
         self.pin_control.message.connect(self._pin_message)
         self.pin_control.request(on_top)
 
+    def set_background_opacity(self, opacity):
+        super().set_background_opacity(opacity)
+        if self.workspace is not None:
+            self.workspace.canvas.set_background_opacity(self.background_opacity)
+
     def set_workspace(self, workspace):
         self.workspace = workspace
         self.scroll = workspace.scroll
         self.layout().insertWidget(0, workspace, 1)
         workspace.set_floating(True, (self.dock_button, self.hide_button))
+        workspace.canvas.set_background_opacity(self.background_opacity)
         workspace.show()
 
     def take_workspace(self):
@@ -52,6 +60,7 @@ class DrawingWindow(QWidget):
         if workspace is not None:
             self.layout().removeWidget(workspace)
             workspace.set_floating(False)
+            workspace.canvas.set_background_opacity(1.0)
             for control in (self.dock_button, self.hide_button):
                 control.setParent(self)
                 control.hide()
