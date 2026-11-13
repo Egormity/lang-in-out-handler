@@ -1,7 +1,7 @@
 """Settings that belong to each workbench tool, outside the floating windows."""
 
 from .audio_controls import AudioSourceCombo
-from .common import label, selection_combo
+from .common import label, language_combo, language_value, selection_combo
 from .language_selectors import target_language_selector
 from .preference_controls import NumberInput
 from .preference_sections import group, instructions, language, model, number, reasoning, toggle
@@ -84,6 +84,17 @@ def translation(page, settings, layout, *, captions=False):
     provider = ProviderControls(page, settings, form, "translation_provider")
     model_widget = model(page, settings, form, "translation_model")
     reasoning(page, settings, form, "translation_reasoning", model_widget)
+    if not captions:
+        page.translation_source_language = language_combo(settings.translation_source_language)
+        page.translation_source_language.setAccessibleName("Input language")
+        page.translation_source_language.setToolTip("Choose the input language, or detect it automatically.")
+        page.fields.add(
+            form, "Translate from", "translation_source_language", page.translation_source_language,
+            read=lambda: language_value(page.translation_source_language),
+            write=lambda value: page.translation_source_language.setCurrentIndex(
+                max(0, page.translation_source_language.findData(value))
+            ),
+        )
     page.target_language = target_language_selector(settings.target_language, compact=False)
     page.fields.add(form, "Translate into", "target_language", page.target_language)
     if not captions:

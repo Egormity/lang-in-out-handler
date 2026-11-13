@@ -18,6 +18,7 @@ from lang_handler.results import TranslationResult
 from lang_handler.settings import Settings
 
 from .capture_page import CapturePage
+from .characters_page import CharactersPage
 from .common import button, label
 from .drawing_page import DrawingPage
 from .history import HistoryPage
@@ -84,6 +85,7 @@ class MainWindow(QMainWindow):
             "output": CapturePage("output", settings),
             "translate": TranslatePage(settings),
             "drawing": DrawingPage(settings),
+            "characters": CharactersPage(),
             "history": HistoryPage(),
             "preferences": PreferencesPage(settings, api_key_present),
         }
@@ -93,6 +95,7 @@ class MainWindow(QMainWindow):
             "output": "Captions",
             "translate": "Translate",
             "drawing": "Draw",
+            "characters": "Characters",
             "history": "History",
             "preferences": "Preferences",
         }
@@ -102,7 +105,8 @@ class MainWindow(QMainWindow):
             item = button(titles[mode])
             item.setObjectName("nav")
             nav_icons = {"input": "mic", "output": "captions", "translate": "translate",
-                         "drawing": "draw", "history": "history", "preferences": "settings"}
+                         "drawing": "draw", "characters": "keyboard",
+                         "history": "history", "preferences": "settings"}
             item.setIcon(icon(nav_icons[mode]))
             item.setIconSize(QSize(18, 18))
             item.setCheckable(True)
@@ -166,6 +170,8 @@ class MainWindow(QMainWindow):
         self.pages["drawing"].audio_requested.connect(self.audio_requested)
         self.pages["drawing"].speech_stop_requested.connect(self.speech_stop_requested)
         self.pages["history"].audio_requested.connect(self.audio_requested)
+        self.pages["characters"].audio_requested.connect(self.audio_requested)
+        self.pages["characters"].translate_requested.connect(self._translate_characters)
         for mode in ("input", "output", "translate", "drawing"):
             self.pages[mode].settings_saved.connect(
                 lambda patch, key=mode: self._apply_settings_patch(
@@ -233,6 +239,18 @@ class MainWindow(QMainWindow):
     def _translate(self, text):
         self.sync_mode_settings()
         self.translate_requested.emit(text)
+
+    def _translate_characters(self, text):
+        if not text.strip():
+            return
+        if self.settings.translation_source_language != "ja":
+            self._apply_settings_patch({"translation_source_language": "ja"})
+            if self.settings.translation_source_language != "ja":
+                return  # A failed save leaves the composed text available here.
+        page = self.pages["translate"]
+        self.show_page("translate")
+        page.set_source_text(text, automatic=False)
+        page.send()
 
     def _speak(self, text):
         self.speech_requested.emit(text)

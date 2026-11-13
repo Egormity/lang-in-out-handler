@@ -22,7 +22,8 @@ class TranslationRequest:
 
 
 def request_signature(text, settings, key):
-    common = (text, settings.translation_provider, settings.target_language, settings.api_proxy_url)
+    common = (text, settings.translation_provider, settings.translation_source_language,
+              settings.target_language, settings.api_proxy_url)
     if settings.translation_provider == "google":
         return common
     return (*common, key, settings.translation_model, settings.translation_reasoning,
@@ -111,11 +112,14 @@ class TextTranslation(QObject):
             service = (GoogleService(proxy=settings.api_proxy_url or None) if google else
                        OpenAIService(request.key, proxy=settings.api_proxy_url or None))
             try:
+                source_options = ({"source_language": settings.translation_source_language}
+                                  if settings.translation_source_language else {})
                 if google:
-                    return service.translate(text, settings.target_language)
+                    return service.translate(text, settings.target_language, **source_options)
                 return service.translate(
                     text, settings.translation_model, settings.target_language,
                     settings.translation_instructions, settings.translation_reasoning,
+                    **source_options,
                 )
             finally:
                 service.close()

@@ -9,6 +9,7 @@ class TranslationResult:
     source_pronunciation: str = ""
     translation_pronunciation: str = ""
     source_correction: str = ""
+    source_language: str = ""
 
 
 @dataclass(frozen=True)

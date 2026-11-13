@@ -316,6 +316,7 @@ def test_translate_contains_speech_for_both_text_panes(qtbot):
         "output",
         "translate",
         "drawing",
+        "characters",
         "history",
         "preferences",
     }

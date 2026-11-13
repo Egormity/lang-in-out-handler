@@ -14,6 +14,7 @@ from .prompts import builtin_instructions, single_prompt, source_input
 from .reasoning import reasoning_options
 from .results import CaptionRevision, TranslationResult
 from .transcription_context import recognized_text, transcription_prompt
+from .translation_languages import resolved_source_language, selected_source_language
 
 MAX_AUDIO_BYTES = 25 * 1024 * 1024
 
@@ -85,6 +86,8 @@ class OpenAIService:
         target_language: str,
         instructions: str = "",
         reasoning: str = "medium",
+        *,
+        source_language: str = "",
     ) -> TranslationResult:
         if not text.strip():
             return TranslationResult("")
@@ -92,8 +95,19 @@ class OpenAIService:
             raise ServiceError("Choose a target language in the Translate settings.")
         guidance = builtin_instructions("translation_instructions")
         guidance += f"\n\nSelected target language: {target_language.strip()}."
+        source = selected_source_language(source_language)
+        guidance += (
+            f"\nSelected source language: {source}. Interpret the original text in this language; "
+            "do not replace the selected source language with auto-detection."
+            if source else "\nAuto-detect the language of the ORIGINAL source text."
+        )
+        guidance += (
+            "\nsource_language: the source language's ISO-639-1 code (ISO-639-3 if necessary), "
+            "never the target language. Use the selected source language when provided. "
+            "With auto-detection, leave it empty for nonlinguistic or indeterminate text."
+        )
         required_fields = ("translation", "source_pronunciation", "translation_pronunciation")
-        fields = (*required_fields, "source_correction")
+        fields = (*required_fields, "source_correction", "source_language")
         options = {
             "model": model,
             "instructions": guidance,
@@ -133,6 +147,7 @@ class OpenAIService:
             values = {key: payload.get(key, "").strip() for key in fields}
             if values["source_correction"] == text.strip():
                 values["source_correction"] = ""
+            values["source_language"] = source or resolved_source_language(values["source_language"])
             return TranslationResult(**values)
         except Exception as error:  # noqa: BLE001 - sanitize every SDK/proxy failure at this boundary
             raise service_error(error, self._key) from None

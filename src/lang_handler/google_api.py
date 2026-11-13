@@ -14,6 +14,7 @@ from .ink import InkSnapshot
 from .network import proxy_url
 from .results import CaptionRevision, TranslationResult
 from .text_utils import flowing_text
+from .translation_languages import selected_source_language
 
 GOOGLE_HANDWRITING_URL = "https://www.google.com/inputtools/request"
 GOOGLE_TRANSLATION_URL = "https://translate.googleapis.com/translate_a/single"
@@ -86,7 +87,9 @@ class GoogleService:
         )
         return handwriting_candidates(response)
 
-    def translate(self, text: str, target_language: str) -> TranslationResult:
+    def translate(
+        self, text: str, target_language: str, *, source_language: str = ""
+    ) -> TranslationResult:
         if not isinstance(text, str):
             raise ServiceError("Enter text to translate.")
         if not text.strip():
@@ -94,12 +97,13 @@ class GoogleService:
         if len(text) > GOOGLE_TRANSLATION_MAX_CHARS:
             raise ServiceError("Google translation is limited to 5,000 characters. Translate a shorter passage.")
         target = language_code(target_language)
+        source = selected_source_language(source_language)
         response = self._request(
             "GET", GOOGLE_TRANSLATION_URL,
-            params=[("client", "gtx"), ("sl", "auto"), ("tl", target),
+            params=[("client", "gtx"), ("sl", language_code(source) if source else "auto"), ("tl", target),
                     ("dt", "t"), ("dt", "rm"), ("dt", "ss"), ("dj", "1"), ("q", text)],
         )
-        return translation_result(response)
+        return translation_result(response, source_language=source)
 
     def revise_translation(
         self, segments: list[tuple[int, str]], target_language: str, previous: str = ""

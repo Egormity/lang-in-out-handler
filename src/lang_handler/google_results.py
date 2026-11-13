@@ -4,6 +4,7 @@ import html
 
 from .errors import ServiceError
 from .results import TranslationResult
+from .translation_languages import resolved_source_language
 
 
 def handwriting_candidates(payload) -> list[str]:
@@ -25,7 +26,7 @@ def handwriting_candidates(payload) -> list[str]:
     return list(dict.fromkeys(text.strip() for text in candidates if text.strip()))[:20]
 
 
-def translation_result(payload) -> TranslationResult:
+def translation_result(payload, *, source_language: str = "") -> TranslationResult:
     message = "Google returned an unsupported translation response. Try again later."
     if not isinstance(payload, dict) or not isinstance(payload.get("sentences"), list):
         raise ServiceError(message)
@@ -51,5 +52,6 @@ def translation_result(payload) -> TranslationResult:
         translation=translation,
         source_pronunciation=" ".join(value.strip() for value in source_readings if value.strip()),
         translation_pronunciation=" ".join(value.strip() for value in translated_readings if value.strip()),
+        source_language=source_language or resolved_source_language(payload.get("src")),
     )
 

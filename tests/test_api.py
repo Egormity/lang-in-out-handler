@@ -102,7 +102,8 @@ def test_translation_is_stateless_and_keeps_input_separate():
     schema = body["text"]["format"]
     assert schema["strict"] is True
     assert set(schema["schema"]["required"]) == {
-        "translation", "source_pronunciation", "translation_pronunciation", "source_correction"
+        "translation", "source_pronunciation", "translation_pronunciation", "source_correction",
+        "source_language",
     }
     service.close()
 

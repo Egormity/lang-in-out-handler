@@ -6,6 +6,9 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QPushButton
 
 _PATHS = {
+    "swap": '<path d="M3 7h17m-4-4 4 4-4 4M21 17H4m4-4-4 4 4 4"/>',
+    "keyboard": '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M5 9h1m3 0h1m3 0h1m3 0h1M5 12h1m3 0h1m3 0h1m3 0h1M7 16h10"/>',
+    "backspace": '<path d="m8 5-6 7 6 7h13V5H8Zm3 4 6 6m0-6-6 6"/>',
     "captions": '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M10 9H7v6h3M18 9h-3v6h3"/>',
     "translate": '<path d="M2 5h12M8 2v3M4 5c0 5 4 8 8 10M12 5c0 5-4 8-8 10M13 21l4-10 4 10M14.5 17h5"/>',
     "draw": '<path d="m3 16 13-13 5 5-13 13H3zM13 6l5 5M3 16l5 5"/>',

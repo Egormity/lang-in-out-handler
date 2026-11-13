@@ -25,6 +25,7 @@ QPushButton#primary { background: #9ae0c0; color: #142a20; font-weight: 600; bor
 QPushButton#primary:hover { background: #b0ebce; }
 QPushButton#primary:disabled { background: #2b4b3c; color: #829b8c; }
 QPushButton#numberStep { padding: 3px; font-size: 20px; }
+QPushButton#kanaKey { padding: 3px; font-size: 24px; }
 QPushButton#preferenceReset { padding: 3px; font-size: 18px; border: none; color: #92a69a; }
 QPushButton#preferenceReset:hover { background: #2b3930; color: #e1f5e8; }
 QPushButton#danger { color: #edada5; }

@@ -24,6 +24,7 @@ class Settings:
     drawing_model: str = "gpt-6.1-sol"
     input_language: str = ""
     output_language: str = "ja"
+    translation_source_language: str = ""
     target_language: str = "English"
     drawing_language: str = "ja"
     translation_reasoning: str = "medium"
