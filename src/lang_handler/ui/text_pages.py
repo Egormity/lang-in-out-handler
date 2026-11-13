@@ -1,11 +1,11 @@
-"""Translation with speech playback for the original and translated text."""
+"""A simple translation workspace with pronunciation beside each passage."""
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QHBoxLayout, QSplitter, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QSplitter, QVBoxLayout, QWidget
 
-from .common import TextPane, button, label, selection_combo, title_block
-from .sections import ExpandableSection, tool_layout
-from .tool_settings import ToolSettings
+from .common import TextPane, button, label, selection_combo
+from .icons import icon_button
+from .tool_settings import ToolSettings, ToolSettingsDialog
 
 
 class TranslatePage(QWidget):
@@ -18,43 +18,47 @@ class TranslatePage(QWidget):
 
     def __init__(self, settings):
         super().__init__()
-        layout = tool_layout(self)
-        layout.addWidget(title_block("Translate", "Translate text, then listen to either version."))
-        actions = QHBoxLayout()
-        actions.addWidget(label("Translate into"))
-        self.target = selection_combo(
-            ["English", "Japanese", "Russian", "Spanish", "French", "German"],
-            settings.target_language,
-        )
-        self.target.setMinimumWidth(140)
-        actions.addWidget(self.target)
-        actions.addStretch()
-        self.run = button("Translate text", True)
-        self.run.clicked.connect(lambda: self.requested.emit(self.source.text.toPlainText()))
-        actions.addWidget(self.run)
-        layout.addLayout(actions)
-        self.advanced = ExpandableSection("Settings")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(20)
+        heading = QHBoxLayout()
+        title = label("Translate")
+        title.setObjectName("title")
+        heading.addWidget(title, 1)
+        self.settings_button = icon_button("settings", "Translation settings")
+        heading.addWidget(self.settings_button)
+        layout.addLayout(heading)
         self.tool_settings = ToolSettings("translate", settings)
         self.tool_settings.saved.connect(self.settings_saved)
-        self.advanced.body_layout.addWidget(self.tool_settings)
-        layout.addWidget(self.advanced)
+        self.settings_dialog = ToolSettingsDialog(self.tool_settings, "Translation", self)
+        self.settings_button.clicked.connect(self.settings_dialog.show_settings)
+        controls = QHBoxLayout()
+        controls.addWidget(label("Translate into", True))
+        self.target = selection_combo(["English", "Japanese", "Russian", "Spanish", "French", "German"], settings.target_language)
+        self.target.setFixedWidth(180)
+        self.target.setAccessibleName("Translation language")
+        controls.addWidget(self.target)
+        controls.addStretch()
+        layout.addLayout(controls)
         self.splitter = QSplitter()
-        self.splitter.setHandleWidth(12)
         self.splitter.setChildrenCollapsible(False)
-        self.source = TextPane("Original", "Type or paste text to translate or read aloud…", False)
+        self.source = TextPane("Original", "Type or paste text…", False)
         self.result = TextPane("Translation", "Your translation appears here.", False)
-        self.speak_original = self.source.speak
-        self.speak_translation = self.result.speak
+        self.speak_original, self.speak_translation = self.source.speak, self.result.speak
         self.source.speech_requested.connect(self.speech_requested)
         self.result.speech_requested.connect(self.speech_requested)
         self.splitter.addWidget(self.source)
         self.splitter.addWidget(self.result)
         self.splitter.setSizes([450, 450])
         layout.addWidget(self.splitter, 1)
+        footer = QHBoxLayout()
+        footer.addStretch()
+        self.run = button("Translate", True)
+        self.run.clicked.connect(lambda: self.requested.emit(self.source.text.toPlainText()))
+        footer.addWidget(self.run)
+        layout.addLayout(footer)
         self.apply_settings(settings)
-        self.target.currentTextChanged.connect(
-            lambda value: self.options_changed.emit({"target_language": value})
-        )
+        self.target.currentTextChanged.connect(lambda value: self.options_changed.emit({"target_language": value}))
 
     def set_result(self, result, source_text=None, target_language=None):
         if source_text is not None and self.source.text.toPlainText() != source_text:
@@ -73,3 +77,4 @@ class TranslatePage(QWidget):
             self.target.addItem(settings.target_language)
         self.target.setCurrentText(settings.target_language)
         self.target.blockSignals(False)
+        self.result.heading.setText(settings.target_language)

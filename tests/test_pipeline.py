@@ -1,7 +1,6 @@
-"""Exercise real Qt worker delivery and queue lifetime without network access."""
+"""Recognition is durable; contextual revisions remain bounded, ordered, and cancellable."""
 
 import threading
-import time
 
 import pytest
 from PySide6.QtCore import QThread
@@ -9,12 +8,28 @@ from PySide6.QtCore import QThread
 from lang_handler.errors import ServiceError
 from lang_handler.jobs import Jobs
 from lang_handler.pipeline import CaptionPipeline
-from lang_handler.results import TranslationResult
+from lang_handler.results import CaptionRevision, TranslationResult
 from lang_handler.settings import Settings
 
 
+class Service:
+    def __init__(self, key, **kwargs):
+        pass
+
+    def transcribe(self, audio, *args):
+        return audio.decode()
+
+    def revise_captions(self, segments, *args):
+        return [CaptionRevision(segment_id, text, TranslationResult("translated " + text, "source", "target"))
+                for segment_id, text in segments]
+
+    def close(self):
+        pass
+
+
 @pytest.fixture
-def pipeline(qapp):
+def pipeline(qapp, monkeypatch):
+    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", Service)
     jobs = Jobs()
     pipeline = CaptionPipeline(jobs)
     yield pipeline
@@ -24,148 +39,257 @@ def pipeline(qapp):
     qapp.processEvents()
 
 
-def test_live_sources_and_translations_stay_ordered_on_ui_thread(
-    pipeline, qtbot, qapp, monkeypatch
-):
-    worker_threads = []
-
-    class Service:
-        def __init__(self, key, **kwargs):
-            pass
-
-        def transcribe(self, audio, *args):
-            worker_threads.append(QThread.currentThread())
-            return audio.decode()
-
-        def translate(self, text, *args):
-            worker_threads.append(QThread.currentThread())
-            time.sleep(0.01)
-            return TranslationResult("translated " + text, "reading " + text, "translated reading " + text)
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", Service)
-    sources, translations, completed, delivery_threads = [], [], [], []
-
-    def receive_source(mode, text, segment_id):
-        delivery_threads.append(QThread.currentThread())
-        sources.append((mode, text, segment_id))
-
-    def receive_translation(mode, segment_id, result):
-        delivery_threads.append(QThread.currentThread())
-        translations.append((mode, segment_id, result.translation))
-
-    pipeline.transcript.connect(receive_source)
-    pipeline.translation.connect(receive_translation)
-    pipeline.completed.connect(lambda *row: completed.append(row))
-    settings = Settings(translation_enabled=True)
-    for text in (b"one", b"two", b"three"):
-        pipeline.enqueue("output", text, settings, "test-key")
-    qtbot.waitUntil(lambda: len(completed) == 3)
-    assert sources == [("output", text, index) for index, text in enumerate(("one", "two", "three"), 1)]
-    assert translations == [("output", index, "translated " + text) for index, text in enumerate(("one", "two", "three"), 1)]
-    assert [(row[1], row[2].translation if isinstance(row[2], TranslationResult) else row[2]) for row in completed] == [
-        (text, "translated " + text) for text in ("one", "two", "three")
-    ]
-    assert all(thread != qapp.thread() for thread in worker_threads)
-    assert all(thread == qapp.thread() for thread in delivery_threads)
+def drained(pipeline):
+    return not any(pipeline.busy.values()) and not any(pipeline.queues.values())
 
 
-def test_abort_discards_old_generation_and_allows_a_fresh_recording(pipeline, qtbot, monkeypatch):
-    first_started, release_first = threading.Event(), threading.Event()
+def test_recognition_is_saved_once_before_ui_and_revision_on_gui_thread(pipeline, qtbot, qapp):
+    saved, transcript, revisions, threads, order = [], [], [], [], []
+
+    def source(*row):
+        saved.append(row)
+        order.append(("save", row[1]))
+        threads.append(QThread.currentThread())
+
+    def visible(mode, text, segment_id):
+        transcript.append((mode, text, segment_id))
+        order.append(("show", segment_id))
+        threads.append(QThread.currentThread())
+
+    pipeline.source_ready.connect(source)
+    pipeline.transcript.connect(visible)
+    pipeline.revisions.connect(revisions.append)
+    for audio in (b"one", b"two", b"three"):
+        pipeline.enqueue("output", audio, Settings(), "key")
+    qtbot.waitUntil(lambda: drained(pipeline))
+    assert [row[2] for row in saved] == ["one", "two", "three"]
+    assert len(saved) == 3
+    assert [row[1] for row in transcript] == ["one", "two", "three"]
+    assert order == [(kind, number) for number in range(1, 4) for kind in ("save", "show")]
+    assert [item.source_text for item in revisions[-1]] == ["one", "two", "three"]
+    assert all(thread == qapp.thread() for thread in threads)
+
+
+def test_pending_snapshots_coalesce_and_new_context_can_revise_earlier_text(pipeline, qtbot, monkeypatch):
+    started, release = threading.Event(), threading.Event()
+    calls, revisions, saved = [], [], []
+
+    class ContextService(Service):
+        def revise_captions(self, segments, *args):
+            calls.append(list(segments))
+            if len(calls) == 1:
+                started.set()
+                assert release.wait(3)
+            resolved = "bridge" if len(segments) > 1 else "chopsticks"
+            return [CaptionRevision(segment_id, text, TranslationResult(resolved, "hashi", "reading"))
+                    for segment_id, text in segments]
+
+    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", ContextService)
+    pipeline.revisions.connect(revisions.append)
+    pipeline.source_ready.connect(lambda *row: saved.append(row))
+    try:
+        pipeline.enqueue("output", "はし".encode(), Settings(), "key")
+        qtbot.waitUntil(started.is_set)
+        pipeline.enqueue("output", "を渡って".encode(), Settings(), "key")
+        pipeline.enqueue("output", "川の向こうへ行く".encode(), Settings(), "key")
+        qtbot.waitUntil(lambda: len(saved) == 3)
+        assert len(pipeline.queues["translation"]) == 1
+        release.set()
+        qtbot.waitUntil(lambda: drained(pipeline))
+        assert len(calls) == 2
+        assert [segment_id for segment_id, _ in calls[1]] == [1, 2, 3]
+        assert revisions[0][0].result.translation == "chopsticks"
+        assert revisions[1][0].segment_id == revisions[0][0].segment_id
+        assert revisions[1][0].result.translation == "bridge"
+        assert len(saved) == 3
+    finally:
+        release.set()
+
+
+def test_recent_context_drops_only_already_translated_sources(pipeline, qtbot, monkeypatch):
     calls = []
 
-    class Service:
-        def __init__(self, key, **kwargs):
-            pass
+    class RecordingService(Service):
+        def revise_captions(self, segments, *args):
+            calls.append(list(segments))
+            return super().revise_captions(segments, *args)
 
-        def transcribe(self, audio, *args):
-            calls.append(audio)
-            if audio == b"old":
-                first_started.set()
-                assert release_first.wait(2)
-            return audio.decode()
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", Service)
-    completed = []
-    pipeline.completed.connect(lambda *row: completed.append(row))
-    settings = Settings(translation_enabled=False)
-    pipeline.enqueue("input", b"old", settings, "key")
-    pipeline.enqueue("input", b"old queued", settings, "key")
-    qtbot.waitUntil(first_started.is_set)
-    pipeline.abort("input")
-    pipeline.enqueue("input", b"fresh", settings, "key")
-    release_first.set()
-    qtbot.waitUntil(lambda: len(completed) == 1)
-    assert completed[0][1] == "fresh"
-    assert calls == [b"old", b"fresh"]
+    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", RecordingService)
+    for index in range(10):
+        pipeline.enqueue("output", str(index).encode(), Settings(), "key")
+        qtbot.waitUntil(lambda: drained(pipeline))
+    assert max(map(len, calls)) == 6
+    assert [segment_id for segment_id, _ in calls[-1]] == list(range(5, 11))
+    assert len(pipeline.context) == 6
+    assert not pipeline.untranslated
 
 
-def test_backlog_is_bounded_and_reports_failure_instead_of_dropping_silently(
-    pipeline, qtbot, monkeypatch
-):
+def test_translation_overload_preserves_all_recognition_and_reports_error(pipeline, qtbot, monkeypatch):
     started, release = threading.Event(), threading.Event()
+    saved, errors, revisions = [], [], []
 
-    class Service:
-        def __init__(self, key, **kwargs):
-            pass
+    class SlowService(Service):
+        def revise_captions(self, segments, *args):
+            started.set()
+            assert release.wait(3)
+            return super().revise_captions(segments, *args)
 
+    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", SlowService)
+    pipeline.source_ready.connect(lambda *row: saved.append(row))
+    pipeline.error.connect(lambda *row: errors.append(row))
+    pipeline.revisions.connect(revisions.append)
+    try:
+        pipeline.enqueue("output", b"first", Settings(), "key")
+        qtbot.waitUntil(started.is_set)
+        for index in range(2, 8):
+            pipeline.enqueue("output", str(index).encode(), Settings(), "key")
+            qtbot.waitUntil(lambda expected=index: len(saved) == expected)
+        assert len(saved) == 7
+        assert len(errors) == 1
+        assert "falling behind" in errors[0][1]
+        assert not pipeline.queues["translation"]
+        release.set()
+        qtbot.waitUntil(lambda: drained(pipeline))
+        assert revisions == []
+    finally:
+        release.set()
+
+
+def test_recognition_backlog_is_bounded_and_aborted_results_never_save(pipeline, qtbot, monkeypatch):
+    started, release = threading.Event(), threading.Event()
+    saved, errors = [], []
+
+    class SlowService(Service):
         def transcribe(self, audio, *args):
             started.set()
-            assert release.wait(2)
-            return "stale result"
+            assert release.wait(3)
+            return "old"
 
-        def close(self):
-            pass
-
-    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", Service)
-    errors, transcripts = [], []
-    pipeline.error.connect(lambda *args: errors.append(args))
-    pipeline.transcript.connect(lambda *args: transcripts.append(args))
-    settings = Settings(translation_enabled=False)
-    pipeline.enqueue("input", b"active", settings, "key")
-    qtbot.waitUntil(started.is_set)
-    for _ in range(7):
-        pipeline.enqueue("input", b"queued", settings, "key")
-    assert len(errors) == 1
-    assert "falling behind" in errors[0][1]
-    assert not pipeline.queues["input"]
-    release.set()
-    qtbot.waitUntil(lambda: not pipeline.busy["input"])
-    assert transcripts == []
+    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", SlowService)
+    pipeline.source_ready.connect(lambda *row: saved.append(row))
+    pipeline.error.connect(lambda *row: errors.append(row))
+    try:
+        pipeline.enqueue("input", b"first", Settings(), "key")
+        qtbot.waitUntil(started.is_set)
+        for _ in range(7):
+            pipeline.enqueue("input", b"queued", Settings(), "key")
+        assert len(errors) == 1
+        release.set()
+        qtbot.waitUntil(lambda: drained(pipeline))
+        assert saved == []
+    finally:
+        release.set()
 
 
-def test_quota_failure_aborts_remaining_audio_requests(pipeline, qtbot, monkeypatch):
-    calls = []
+@pytest.mark.parametrize("operation", ["abort", "shutdown", "begin_session"])
+def test_cancel_discards_late_revisions_without_duplicating_saved_sources(pipeline, qtbot, monkeypatch, operation):
+    started, release = threading.Event(), threading.Event()
+    saved, revisions = [], []
 
-    class Service:
-        def __init__(self, key, **kwargs):
-            pass
+    class SlowService(Service):
+        def revise_captions(self, segments, *args):
+            started.set()
+            assert release.wait(3)
+            return super().revise_captions(segments, *args)
 
-        def transcribe(self, audio, *args):
-            calls.append(audio)
+    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", SlowService)
+    pipeline.source_ready.connect(lambda *row: saved.append(row))
+    pipeline.revisions.connect(revisions.append)
+    try:
+        pipeline.enqueue("output", b"already recognized", Settings(), "key")
+        qtbot.waitUntil(started.is_set)
+        if operation == "shutdown":
+            pipeline.shutdown()
+        else:
+            getattr(pipeline, operation)("output")
+        release.set()
+        qtbot.waitUntil(lambda: drained(pipeline))
+        assert len(saved) == 1
+        assert revisions == []
+    finally:
+        release.set()
+
+
+def test_translation_failure_keeps_recognition_once(pipeline, qtbot, monkeypatch):
+    saved, errors = [], []
+
+    class FailingService(Service):
+        def revise_captions(self, segments, *args):
             raise ServiceError("OpenAI API credits are exhausted.")
 
-        def close(self):
-            pass
-
-    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", Service)
-    errors = []
-    pipeline.error.connect(lambda *args: errors.append(args))
-    for _ in range(4):
-        pipeline.enqueue("output", b"audio", Settings(), "key")
-    qtbot.waitUntil(lambda: bool(errors))
-    qtbot.waitUntil(lambda: not pipeline.busy["output"])
-    assert len(calls) == 1
-    assert not pipeline.queues["output"]
+    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", FailingService)
+    pipeline.source_ready.connect(lambda *row: saved.append(row))
+    pipeline.error.connect(lambda *row: errors.append(row))
+    pipeline.enqueue("output", b"recognized words", Settings(), "key")
+    qtbot.waitUntil(lambda: drained(pipeline))
+    pipeline.shutdown()
+    assert len(saved) == 1
+    assert saved[0][2] == "recognized words"
     assert "credits" in errors[0][1]
 
 
-def test_cancelled_job_drops_already_queued_results_but_still_cleans_up(qapp):
+def test_context_restarts_for_target_changes_and_translation_toggles(pipeline, qtbot, monkeypatch):
+    calls = []
+
+    class RecordingService(Service):
+        def revise_captions(self, segments, model, target, instructions, reasoning):
+            calls.append((list(segments), target, reasoning))
+            return super().revise_captions(segments)
+
+    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", RecordingService)
+    settings = Settings()
+    for index, (enabled, target) in enumerate([(True, "English"), (True, "English"), (False, "English"), (True, "English"), (True, "French")], 1):
+        settings.translation_enabled = enabled
+        settings.target_language = target
+        pipeline.enqueue("output", str(index).encode(), settings, "key")
+        qtbot.waitUntil(lambda: drained(pipeline))
+    assert [[item[0] for item in segments] for segments, _, _ in calls] == [[1], [1, 2], [4], [5]]
+    assert [target for _, target, _ in calls] == ["English", "English", "English", "French"]
+    assert all(reasoning == "medium" for _, _, reasoning in calls)
+
+
+def test_new_session_has_new_ids_and_no_previous_context(pipeline, qtbot, monkeypatch):
+    calls = []
+
+    class RecordingService(Service):
+        def revise_captions(self, segments, *args):
+            calls.append(list(segments))
+            return super().revise_captions(segments)
+
+    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", RecordingService)
+    pipeline.enqueue("output", b"same phrase", Settings(), "key")
+    qtbot.waitUntil(lambda: drained(pipeline))
+    pipeline.begin_session("output")
+    pipeline.enqueue("output", b"same phrase", Settings(), "key")
+    qtbot.waitUntil(lambda: drained(pipeline))
+    assert calls == [[(1, "same phrase")], [(2, "same phrase")]]
+
+
+def test_pending_count_includes_revision_after_recognition_finishes(pipeline, qtbot, monkeypatch):
+    started, release = threading.Event(), threading.Event()
+    pending = []
+
+    class SlowService(Service):
+        def revise_captions(self, segments, *args):
+            started.set()
+            assert release.wait(3)
+            return super().revise_captions(segments)
+
+    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", SlowService)
+    pipeline.pending_changed.connect(lambda mode, count: pending.append((mode, count)))
+    try:
+        pipeline.enqueue("output", b"pending", Settings(), "key")
+        qtbot.waitUntil(started.is_set)
+        qtbot.waitUntil(lambda: not pipeline.busy["output"])
+        assert pending[-1][1] > 0
+        release.set()
+        qtbot.waitUntil(lambda: drained(pipeline))
+        assert pending[-1] == ("output", 0)
+    finally:
+        release.set()
+
+
+def test_cancelled_job_drops_queued_results_but_cleans_up(qapp):
     jobs = Jobs()
     results, progress, finished = [], [], []
 
@@ -173,202 +297,10 @@ def test_cancelled_job_drops_already_queued_results_but_still_cleans_up(qapp):
         report("old progress")
         return "old result"
 
-    job = jobs.submit(
-        work, results.append, progress=progress.append, finished=lambda: finished.append(True)
-    )
-    # Deliberately let the worker finish while UI delivery is paused, then cancel.
+    job = jobs.submit(work, results.append, progress=progress.append, finished=lambda: finished.append(True))
     assert jobs.pool.waitForDone(2000)
     job.cancelled.set()
     qapp.processEvents()
-    assert results == []
-    assert progress == []
+    assert results == progress == []
     assert finished == [True]
     assert not jobs.active
-
-
-def test_translation_failure_preserves_every_recognized_source_exactly_once(
-    pipeline, qtbot, monkeypatch
-):
-    release_failure = threading.Event()
-
-    class Service:
-        def __init__(self, key, **kwargs):
-            pass
-
-        def transcribe(self, audio, *args):
-            return audio.decode()
-
-        def translate(self, text, *args):
-            if text == "one":
-                return TranslationResult("translated one", "one", "one")
-            assert release_failure.wait(2)
-            raise ServiceError("OpenAI API credits are exhausted.")
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", Service)
-    sources, completed, errors = [], [], []
-    pipeline.transcript.connect(lambda *args: sources.append(args))
-    pipeline.completed.connect(lambda *args: completed.append(args))
-    pipeline.error.connect(lambda *args: errors.append(args))
-    try:
-        for audio in (b"one", b"two", b"three"):
-            pipeline.enqueue("output", audio, Settings(), "key")
-        qtbot.waitUntil(lambda: len(sources) == 3)
-        release_failure.set()
-        qtbot.waitUntil(lambda: bool(errors))
-        qtbot.waitUntil(lambda: not pipeline.busy["translation"])
-        assert [(row[1], row[2].translation if isinstance(row[2], TranslationResult) else row[2]) for row in completed] == [
-            ("one", "translated one"),
-            ("two", ""),
-            ("three", ""),
-        ]
-        pipeline.shutdown()
-        assert len(completed) == 3
-    finally:
-        release_failure.set()
-
-
-@pytest.mark.parametrize("operation", ["abort", "shutdown"])
-def test_abort_and_shutdown_flush_recognized_sources_without_late_duplicates(
-    pipeline,
-    qtbot,
-    monkeypatch,
-    operation,
-):
-    release = threading.Event()
-
-    class Service:
-        def __init__(self, key, **kwargs):
-            pass
-
-        def transcribe(self, audio, *args):
-            return audio.decode()
-
-        def translate(self, text, *args):
-            assert release.wait(2)
-            return TranslationResult("late translation", "source", "target")
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", Service)
-    sources, completed, translated = [], [], []
-    pipeline.transcript.connect(lambda *args: sources.append(args))
-    pipeline.completed.connect(lambda *args: completed.append(args))
-    pipeline.translation.connect(lambda *args: translated.append(args))
-    try:
-        for audio in (b"one", b"two"):
-            pipeline.enqueue("output", audio, Settings(), "key")
-        qtbot.waitUntil(lambda: len(sources) == 2)
-        if operation == "abort":
-            pipeline.abort("output")
-        else:
-            pipeline.shutdown()
-        assert [(row[1], row[2].translation if isinstance(row[2], TranslationResult) else row[2]) for row in completed] == [("one", ""), ("two", "")]
-        release.set()
-        qtbot.waitUntil(lambda: not pipeline.busy["translation"])
-        assert len(completed) == 2
-        assert translated == []
-    finally:
-        release.set()
-
-
-def test_repeated_text_keeps_segment_identity_across_translation_setting_snapshots(
-    pipeline, qtbot, monkeypatch
-):
-    started, release = threading.Event(), threading.Event()
-    calls = []
-
-    class Service:
-        def __init__(self, key, **kwargs):
-            pass
-
-        def transcribe(self, audio, *args):
-            if audio == b"first":
-                started.set()
-                assert release.wait(2)
-            return "はし"
-
-        def translate(self, text, model, target, instructions, reasoning):
-            calls.append((text, target, reasoning))
-            return TranslationResult(target + " result", "hashi", target + " reading")
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", Service)
-    sources, translated, completed = [], [], []
-    pipeline.transcript.connect(lambda *args: sources.append(args))
-    pipeline.translation.connect(lambda *args: translated.append(args))
-    pipeline.completed.connect(lambda *args: completed.append(args))
-    settings = Settings(translation_enabled=False)
-    try:
-        pipeline.enqueue("output", b"first", settings, "key")
-        qtbot.waitUntil(started.is_set)
-        settings.translation_enabled = True
-        pipeline.enqueue("output", b"second", settings, "key")
-        settings.translation_enabled = False
-        pipeline.enqueue("output", b"third", settings, "key")
-        settings.translation_enabled = True
-        settings.target_language = "French"
-        settings.translation_reasoning = "high"
-        pipeline.enqueue("output", b"fourth", settings, "key")
-        release.set()
-        qtbot.waitUntil(lambda: len(completed) == 4)
-        assert sources == [("output", "はし", index) for index in range(1, 5)]
-        assert [(mode, segment_id) for mode, segment_id, _ in translated] == [
-            ("output", 2), ("output", 4)
-        ]
-        assert calls == [("はし", "English", "medium"), ("はし", "French", "high")]
-        assert translated[0][2].translation == "English result"
-        assert translated[1][2].translation == "French result"
-    finally:
-        release.set()
-
-
-def test_aborted_translation_id_is_not_reused_by_new_identical_speech(
-    pipeline, qtbot, monkeypatch
-):
-    started, release = threading.Event(), threading.Event()
-    count = 0
-
-    class Service:
-        def __init__(self, key, **kwargs):
-            pass
-
-        def transcribe(self, audio, *args):
-            return "こんにちは"
-
-        def translate(self, text, *args):
-            nonlocal count
-            count += 1
-            if count == 1:
-                started.set()
-                assert release.wait(2)
-            return TranslationResult("Hello", "Konnichiwa", "hello")
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", Service)
-    sources, translated, completed = [], [], []
-    pipeline.transcript.connect(lambda *args: sources.append(args))
-    pipeline.translation.connect(lambda *args: translated.append(args))
-    pipeline.completed.connect(lambda *args: completed.append(args))
-    try:
-        pipeline.enqueue("output", b"old", Settings(), "key")
-        qtbot.waitUntil(started.is_set)
-        pipeline.abort("output")
-        pipeline.enqueue("output", b"new", Settings(), "key")
-        qtbot.waitUntil(lambda: len(sources) == 2)
-        assert sources[0][2] != sources[1][2]
-        release.set()
-        qtbot.waitUntil(lambda: len(completed) == 2)
-        assert len(translated) == 1
-        assert translated[0][1] == sources[1][2]
-        assert completed[0][2] == ""
-        assert completed[1][2].translation == "Hello"
-    finally:
-        release.set()

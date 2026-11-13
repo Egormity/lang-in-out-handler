@@ -115,6 +115,19 @@ class Store:
             )
             return int(cursor.lastrowid)
 
+    def update_history_translation(
+        self, record_id: int, translated_text: str, source_pronunciation: str = "",
+        translation_pronunciation: str = "",
+    ) -> bool:
+        """Revise one recognized caption without adding another history entry."""
+        with self._lock, self._db:
+            cursor = self._db.execute(
+                "UPDATE history SET translated_text=?, source_pronunciation=?, "
+                "translation_pronunciation=? WHERE id=? AND mode='output'",
+                (translated_text, source_pronunciation, translation_pronunciation, record_id),
+            )
+            return bool(cursor.rowcount)
+
     def list_history(self, limit: int = 100) -> list[dict]:
         with self._lock:
             rows = self._db.execute(

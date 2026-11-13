@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from ..window_pin import WindowPin
-from .common import button
+from .icons import icon_button
 from .theme import STYLE
 
 
@@ -16,20 +16,20 @@ class DrawingWindow(QWidget):
         self.setWindowTitle("Lang In/Out · Handwriting")
         self.setWindowFlags(Qt.WindowType.Tool)
         self.setStyleSheet(STYLE)
-        self.resize(750, 600)
-        self.setMinimumSize(480, 480)
+        self.resize(650, 530)
+        self.setMinimumSize(440, 440)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 12)
         layout.setSpacing(8)
         toolbar = QHBoxLayout()
-        title = QLabel("Handwriting")
+        title = QLabel("Draw")
         title.setObjectName("section")
         toolbar.addWidget(title)
         toolbar.addStretch()
-        self.dock_button = button("Dock")
+        self.dock_button = icon_button("dock", "Dock canvas")
         self.dock_button.setObjectName("quiet")
         self.dock_button.clicked.connect(self.dock_requested)
-        self.hide_button = button("Hide")
+        self.hide_button = icon_button("close", "Hide canvas")
         self.hide_button.setObjectName("quiet")
         self.hide_button.clicked.connect(self.hide)
         toolbar.addWidget(self.dock_button)

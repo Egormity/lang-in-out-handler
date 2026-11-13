@@ -1,18 +1,20 @@
-"""Ordered, bounded transcription and translation queues for live audio."""
+"""Ordered recognition and bounded contextual revisions for continuous captions."""
 
 from collections import deque
 from copy import deepcopy
+from itertools import count
 
 from PySide6.QtCore import QObject, Signal
 
-from lang_handler.api import OpenAIService
-from lang_handler.jobs import Jobs
+from .api import OpenAIService
+from .caption_context import trim_context
+from .jobs import Jobs
 
 
 class CaptionPipeline(QObject):
     transcript = Signal(str, str, int)
-    translation = Signal(str, int, object)
-    completed = Signal(str, str, object, str)
+    source_ready = Signal(str, int, str, str)
+    revisions = Signal(object)
     error = Signal(str, str)
     pending_changed = Signal(str, int)
 
@@ -22,9 +24,19 @@ class CaptionPipeline(QObject):
         self.queues = {mode: deque() for mode in ("input", "output", "translation")}
         self.busy = {mode: False for mode in self.queues}
         self.generations = {mode: 0 for mode in self.queues}
-        self.active_translation = None
-        self._last_segment_id = 0
+        self._segment_ids = count(1)
+        self.context = []
+        self.untranslated = set()
+        self.context_signature = None
         self.closed = False
+
+    def allocate_segment_id(self):
+        """Allocate one identity shared by live recognition and file import workers."""
+        return next(self._segment_ids)
+
+    def begin_session(self, mode):
+        """Start fresh context after the previous recording has finished draining."""
+        self.abort(mode)
 
     def enqueue(self, mode, audio, settings, key):
         if self.closed:
@@ -43,17 +55,21 @@ class CaptionPipeline(QObject):
         self.generations[mode] += 1
         self.queues[mode].clear()
         if mode == "output":
-            self.generations["translation"] += 1
-            # Recognition already succeeded for these captions. Preserve their source
-            # even when translation fails, capture is aborted, or the app is closed.
-            pending = []
-            if self.active_translation is not None:
-                pending.append(self.active_translation)
-                self.active_translation = None
-            pending.extend((text, model) for _, text, _, _, model in self.queues["translation"])
-            self.queues["translation"].clear()
-            for text, model in pending:
-                self.completed.emit("output", text, "", model)
+            self._reset_context()
+        self._notify(mode)
+
+    def _reset_context(self, signature=None):
+        self.generations["translation"] += 1
+        self.queues["translation"].clear()
+        self.context.clear()
+        self.untranslated.clear()
+        self.context_signature = signature
+
+    def _notify(self, mode):
+        pending = len(self.queues[mode]) + int(self.busy[mode])
+        if mode == "output":
+            pending += len(self.untranslated)
+        self.pending_changed.emit(mode, pending)
 
     def _start(self, mode):
         if self.closed or self.busy[mode] or not self.queues[mode]:
@@ -67,8 +83,7 @@ class CaptionPipeline(QObject):
             service = OpenAIService(key, proxy=settings.api_proxy_url or None)
             try:
                 return service.transcribe(
-                    audio,
-                    model,
+                    audio, model,
                     getattr(settings, f"{mode}_language"),
                     getattr(settings, f"{mode}_instructions"),
                 )
@@ -78,22 +93,12 @@ class CaptionPipeline(QObject):
         def success(text):
             if self.closed or generation != self.generations[mode] or not text.strip():
                 return
-            self._last_segment_id += 1
-            segment_id = self._last_segment_id
+            segment_id = self.allocate_segment_id()
+            # Persist recognition once, immediately, even if translation later fails.
+            self.source_ready.emit(mode, segment_id, text, model)
             self.transcript.emit(mode, text, segment_id)
-            if mode == "output" and settings.translation_enabled:
-                if len(self.queues["translation"]) >= 6:
-                    self.abort(mode)
-                    self.completed.emit(mode, text, "", model)
-                    self.error.emit(
-                        mode,
-                        "Translation is falling behind. Capture stopped; choose a faster translation model or disable translation.",
-                    )
-                    return
-                self.queues["translation"].append((segment_id, text, settings, key, model))
-                self._translate()
-            else:
-                self.completed.emit(mode, text, "", model)
+            if mode == "output":
+                self._schedule_revision(segment_id, text, settings, key)
 
         def failure(message):
             if generation == self.generations[mode] and not self.closed:
@@ -102,39 +107,62 @@ class CaptionPipeline(QObject):
 
         def done():
             self.busy[mode] = False
-            self.pending_changed.emit(mode, len(self.queues[mode]))
             self._start(mode)
+            self._notify(mode)
 
-        self.pending_changed.emit(mode, len(self.queues[mode]) + 1)
+        self._notify(mode)
         self.jobs.submit(work, success, failure, finished=done)
+
+    def _schedule_revision(self, segment_id, text, settings, key):
+        signature = (
+            settings.translation_enabled, settings.translation_model, settings.target_language,
+            settings.translation_instructions, settings.translation_reasoning,
+            settings.output_language, settings.api_proxy_url, key,
+        )
+        if signature != self.context_signature:
+            self._reset_context(signature)
+        if not settings.translation_enabled:
+            return
+        recent = trim_context([*self.context, (segment_id, text)])
+        retained_ids = {item[0] for item in recent}
+        if self.untranslated - retained_ids:
+            # Coalescing must not silently skip a source that was never translated.
+            self.abort("output")
+            self.error.emit(
+                "output",
+                "Caption translation is falling behind. Capture stopped; all recognized text is saved. Increase chunk duration or choose a faster translation model.",
+            )
+            return
+        self.context = recent
+        self.untranslated.add(segment_id)
+        # One active call plus one newest snapshot; superseded snapshots cost no requests.
+        self.queues["translation"].clear()
+        self.queues["translation"].append((list(recent), settings, key))
+        self._translate()
+        self._notify("output")
 
     def _translate(self):
         mode = "translation"
         if self.closed or self.busy[mode] or not self.queues[mode]:
             return
         self.busy[mode] = True
-        segment_id, text, settings, key, asr_model = self.queues[mode].popleft()
-        self.active_translation = (text, asr_model)
+        segments, settings, key = self.queues[mode].popleft()
         generation = self.generations[mode]
 
         def work(cancel, progress):
             service = OpenAIService(key, proxy=settings.api_proxy_url or None)
             try:
-                return service.translate(
-                    text,
-                    settings.translation_model,
-                    settings.target_language,
-                    settings.translation_instructions,
-                    settings.translation_reasoning,
+                return service.revise_captions(
+                    segments, settings.translation_model, settings.target_language,
+                    settings.translation_instructions, settings.translation_reasoning,
                 )
             finally:
                 service.close()
 
-        def success(translated):
+        def success(revisions):
             if generation == self.generations[mode] and not self.closed:
-                self.active_translation = None
-                self.translation.emit("output", segment_id, translated)
-                self.completed.emit("output", text, translated, asr_model)
+                self.untranslated.difference_update(item.segment_id for item in revisions)
+                self.revisions.emit(revisions)
 
         def failed(message):
             if generation == self.generations[mode] and not self.closed:
@@ -144,6 +172,7 @@ class CaptionPipeline(QObject):
         def done():
             self.busy[mode] = False
             self._translate()
+            self._notify("output")
 
         self.jobs.submit(work, success, failed, finished=done)
 

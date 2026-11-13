@@ -6,13 +6,15 @@ from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,
-    QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
 from .dropdown import CompactComboBox
+from .icons import icon_button
+from .text_edit import GrowingTextEdit
 
 
 def title_block(title: str, description: str) -> QWidget:
@@ -25,7 +27,8 @@ def title_block(title: str, description: str) -> QWidget:
     sub.setObjectName("subtitle")
     sub.setWordWrap(True)
     layout.addWidget(heading)
-    layout.addWidget(sub)
+    if description:
+        layout.addWidget(sub)
     return widget
 
 
@@ -125,43 +128,53 @@ class TextPane(QWidget):
         self.setObjectName("textPane")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 10)
-        layout.setSpacing(6)
-        row = QHBoxLayout()
-        row.addWidget(label(title))
-        row.addStretch()
-        self.speak = button("Speak")
-        self.speak.setObjectName("quiet")
-        self.speak.setAccessibleName(f"Speak {title.lower()}")
-        self.speak.setToolTip("Read this text aloud using your speech preferences.")
-        self.speak.setEnabled(False)
-        row.addWidget(self.speak)
-        copy = button("Copy")
-        copy.setObjectName("quiet")
-        copy.setMaximumWidth(85)
-        row.addWidget(copy)
-        self.text = QPlainTextEdit()
-        self.text.setMinimumWidth(0)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(8)
+        self.heading = label(title, True)
+        layout.addWidget(self.heading)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        body = QWidget()
+        body.setObjectName("textBody")
+        content = QVBoxLayout(body)
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(0)
+        self.text = GrowingTextEdit(minimum=58)
+        self.text.setObjectName("contentText")
         self.text.setReadOnly(read_only)
         self.text.setAccessibleName(title)
         self.text.setTabChangesFocus(True)
         self.text.setPlaceholderText(placeholder)
-        self.text.document().setMaximumBlockCount(2000)
-        copy.clicked.connect(lambda: QApplication.clipboard().setText(self.text.toPlainText()))
-        self.speak.clicked.connect(lambda: self.speech_requested.emit(self.text.toPlainText()))
-        self.text.textChanged.connect(
-            lambda: self.speak.setEnabled(bool(self.text.toPlainText().strip()))
-        )
-        layout.addLayout(row)
-        layout.addWidget(self.text)
+        content.addWidget(self.text)
         from .pronunciation import PronunciationGuide
 
         self.pronunciation = PronunciationGuide()
-        layout.addWidget(self.pronunciation)
-        self.text.textChanged.connect(lambda: self.pronunciation.set_text(""))
+        content.addWidget(self.pronunciation)
+        content.addStretch(1)
+        body.mousePressEvent = lambda event: self.text.setFocus()
+        self.scroll.setWidget(body)
+        layout.addWidget(self.scroll, 1)
         self.actions = QHBoxLayout()
+        self.actions.setSpacing(4)
         self.actions.addStretch()
+        self.copy = icon_button("copy", f"Copy {title.lower()}")
+        self.speak = icon_button("speak", f"Speak {title.lower()}")
+        self.speak.setToolTip("Read selected text, or the whole pane.")
+        self.copy.setEnabled(False)
+        self.speak.setEnabled(False)
+        self.copy.clicked.connect(lambda: QApplication.clipboard().setText(self.text.toPlainText()))
+        self.speak.clicked.connect(lambda: self.speech_requested.emit(self.text.textCursor().selectedText().replace("\u2029", "\n") or self.text.toPlainText()))
+        self.text.textChanged.connect(self._changed)
+        self.actions.addWidget(self.copy)
+        self.actions.addWidget(self.speak)
         layout.addLayout(self.actions)
+
+    def _changed(self):
+        has_text = bool(self.text.toPlainText().strip())
+        self.copy.setEnabled(has_text)
+        self.speak.setEnabled(has_text)
+        self.pronunciation.set_text("")
 
     def set_pronunciation(self, text: str):
         self.pronunciation.set_text(text)
@@ -174,5 +187,4 @@ class TextPane(QWidget):
     def append(self, text: str):
         if text.strip():
             self.text.appendPlainText(text.strip())
-            scrollbar = self.text.verticalScrollBar()
-            scrollbar.setValue(scrollbar.maximum())
+            self.scroll.verticalScrollBar().setValue(self.scroll.verticalScrollBar().maximum())

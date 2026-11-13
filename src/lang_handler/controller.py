@@ -35,6 +35,7 @@ class Controller(QObject):
         self.shortcuts = GlobalShortcuts()
         self.applied_shortcuts = None
         self.accept_audio = {"input": True, "output": True}
+        self.caption_history = {}
         self.captures = {mode: AudioCapture(self) for mode in ("input", "output")}
         for mode, capture in self.captures.items():
             capture.chunk.connect(lambda audio, m=mode: self._audio(m, audio))
@@ -43,8 +44,8 @@ class Controller(QObject):
             capture.level.connect(lambda value, m=mode: self.window.set_level(m, value)
                                   if hasattr(self.window, "set_level") else None)
         self.pipeline.transcript.connect(self._transcript)
-        self.pipeline.translation.connect(self._translation)
-        self.pipeline.completed.connect(self.remember)
+        self.pipeline.revisions.connect(self._revisions)
+        self.pipeline.source_ready.connect(self.remember_segment)
         self.pipeline.error.connect(self._pipeline_error)
         self.pipeline.pending_changed.connect(self._pending)
         window.capture_requested.connect(self.start)
@@ -166,6 +167,10 @@ class Controller(QObject):
         capture = self.captures[mode]
         if capture.is_running:
             return
+        if self.pipeline_busy(mode):
+            self.status("Finishing the previous recording. Please wait before starting another.")
+            return
+        self.pipeline.begin_session(mode)
         try:
             source = self.settings.microphone_source if mode == "input" else self.settings.output_source or "@DEFAULT_MONITOR@"
             self.accept_audio[mode] = True
@@ -213,9 +218,31 @@ class Controller(QObject):
         else:
             self.dictation.enqueue(text, self.settings.input_delivery)
 
-    def _translation(self, mode, segment_id, result):
-        self.window.annotate_translation(mode, segment_id, result)
-        self.overlay.annotate_translation(segment_id, result)
+    def pipeline_busy(self, mode):
+        names = (mode, "translation") if mode == "output" else (mode,)
+        return any(self.pipeline.busy[name] or self.pipeline.queues[name] for name in names)
+
+    def remember_segment(self, mode, segment_id, text, model):
+        record_id = self.store.add_history(mode, text, "", model)
+        if mode == "output":
+            self.caption_history[segment_id] = record_id
+            # Only the rolling context can be revised; keep a generous bounded map.
+            while len(self.caption_history) > 512:
+                self.caption_history.pop(next(iter(self.caption_history)))
+        self.refresh_history()
+
+    def _revisions(self, revisions):
+        for revision in revisions:
+            result = revision.result
+            self.window.annotate_translation("output", revision.segment_id, result)
+            self.overlay.annotate_translation(revision.segment_id, result)
+            record_id = self.caption_history.get(revision.segment_id)
+            if record_id is not None:
+                self.store.update_history_translation(
+                    record_id, result.translation, result.source_pronunciation,
+                    result.translation_pronunciation,
+                )
+        self.refresh_history()
 
     def _pending(self, mode, count):
         if mode == "output" and self.accept_audio[mode]:
@@ -238,6 +265,7 @@ class Controller(QObject):
         self.window.set_history(self.store.list_history())
 
     def delete_history(self):
+        self.caption_history.clear()
         self.store.delete_history()
         self.refresh_history()
         self.status("History deleted.")
@@ -278,6 +306,8 @@ class Controller(QObject):
 
     def shutdown(self):
         self.pipeline.shutdown()
+        for mode in ("input", "output", "translate", "drawing"):
+            self.window.pages[mode].settings_dialog.close()
         self.dictation.close()
         self.overlay.pin_control.stop()
         self.handwriting.cancel()

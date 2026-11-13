@@ -1,7 +1,15 @@
 """Shared settings builders and the application-wide speech/shortcut sections."""
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import QCheckBox, QFormLayout, QGroupBox, QKeySequenceEdit, QPlainTextEdit
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QFormLayout,
+    QKeySequenceEdit,
+    QPlainTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ..reasoning import REASONING_EFFORTS, supports_reasoning
 from .common import label, language_combo, language_value, selection_combo
@@ -10,11 +18,21 @@ from .sections import scrollable_body
 
 
 def group(title, layout):
-    box = QGroupBox(title.replace("&", "&&"))
-    form = QFormLayout(box)
+    box = QWidget()
+    box.setObjectName("settingsSection")
+    section = QVBoxLayout(box)
+    section.setContentsMargins(0, 4, 0, 12)
+    section.setSpacing(12)
+    heading = label(title)
+    heading.setObjectName("settingsHeading")
+    section.addWidget(heading)
+    form = QFormLayout()
     form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-    form.setHorizontalSpacing(16)
-    form.setVerticalSpacing(12)
+    form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+    form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+    form.setHorizontalSpacing(18)
+    form.setVerticalSpacing(10)
+    section.addLayout(form)
     layout.addWidget(box)
     return form
 
@@ -36,13 +54,13 @@ def instructions(page, settings, form, key):
     widget.setAccessibleName(key.replace("_", " ").capitalize())
     widget.setTabChangesFocus(True)
     widget.setPlaceholderText("Language, style, vocabulary, or pronunciation instructions…")
-    widget.setFixedHeight(88)
+    widget.setFixedHeight(80)
     page.instructions[key] = widget
     page.fields.add(form, "Instructions", key, widget)
 
 
 def toggle(page, form, title, key):
-    widget = QCheckBox("Enabled")
+    widget = QCheckBox()
     widget.setAccessibleName(title)
     setattr(page, key, widget)
     page.fields.add(form, title, key, widget)

@@ -8,7 +8,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 
 from lang_handler.controller import Controller
 from lang_handler.errors import ServiceError
-from lang_handler.results import TranslationResult
+from lang_handler.results import CaptionRevision, TranslationResult
 from lang_handler.settings import Settings
 from lang_handler.storage import Store
 from lang_handler.tts_api import pcm_to_wav
@@ -61,6 +61,10 @@ class FakeService:
     def translate(self, text, *args):
         return TranslationResult("translation: " + text, "source reading", "target reading")
 
+    def revise_captions(self, segments, *args):
+        return [CaptionRevision(segment_id, text, self.translate(text, *args))
+                for segment_id, text in segments]
+
     def synthesize(self, text, *args):
         return pcm_to_wav(b"\x00\x00" * 100)
 
@@ -85,6 +89,7 @@ def controller(qapp, qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr("lang_handler.dictation.deliver_transcript", lambda *args, **kwargs: "Copied.")
     monkeypatch.setattr("lang_handler.pipeline.OpenAIService", FakeService)
     monkeypatch.setattr("lang_handler.workflows.OpenAIService", FakeService)
+    monkeypatch.setattr("lang_handler.file_import.OpenAIService", FakeService)
     monkeypatch.setattr("lang_handler.workflows.play_audio", lambda path: FakePlayer())
     store = Store(tmp_path)
     settings = Settings(input_delivery="copy")
@@ -129,6 +134,7 @@ def test_all_modes_reach_widgets_and_persistent_history(controller, qtbot):
     c.captures["output"].chunk.emit(b"speaker words")
     c.window.stop_requested.emit("output")
     qtbot.waitUntil(lambda: len(c.store.list_history()) == 2)
+    qtbot.waitUntil(lambda: not c.pipeline_busy("output"))
 
     c.window.translate_requested.emit("text words")
     qtbot.waitUntil(lambda: len(c.store.list_history()) == 3)
@@ -153,7 +159,7 @@ def test_all_modes_reach_widgets_and_persistent_history(controller, qtbot):
 
 def test_file_import_keeps_each_transcript_paired_with_translation(controller, qtbot, monkeypatch):
     monkeypatch.setattr(
-        "lang_handler.workflows.audio_file_chunks", lambda *args: iter([b"first", b"second"])
+        "lang_handler.file_import.audio_file_chunks", lambda *args: iter([b"first", b"second"])
     )
     controller.window.file_requested.emit("output", "test.wav", True)
     qtbot.waitUntil(lambda: len(controller.store.list_history()) == 2)
@@ -176,9 +182,9 @@ def test_cancelled_import_cannot_finish_or_remove_replacement(controller, qtbot,
             assert release[name].wait(3)
             return name
 
-    monkeypatch.setattr("lang_handler.workflows.OpenAIService", BlockingService)
+    monkeypatch.setattr("lang_handler.file_import.OpenAIService", BlockingService)
     monkeypatch.setattr(
-        "lang_handler.workflows.audio_file_chunks",
+        "lang_handler.file_import.audio_file_chunks",
         lambda path, seconds: iter([Path(path).stem.encode()]),
     )
     c = controller
@@ -215,9 +221,9 @@ def test_import_keeps_recognized_source_when_translation_fails(controller, qtbot
         def translate(self, text, *args):
             raise ServiceError("OpenAI API credits are exhausted.")
 
-    monkeypatch.setattr("lang_handler.workflows.OpenAIService", FailingTranslation)
+    monkeypatch.setattr("lang_handler.file_import.OpenAIService", FailingTranslation)
     monkeypatch.setattr(
-        "lang_handler.workflows.audio_file_chunks", lambda *args: iter([b"recognized words"])
+        "lang_handler.file_import.audio_file_chunks", lambda *args: iter([b"recognized words"])
     )
     controller.workflows.import_file("output", "test.wav", False)
     qtbot.waitUntil(lambda: not controller.workflows.imports)

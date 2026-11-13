@@ -1,29 +1,26 @@
-"""A compact, selectable pronunciation guide attached to a text pane."""
+"""A quiet pronunciation guide immediately below its text."""
 
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QPlainTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QSizePolicy, QWidget
 
-from .common import button, label
+from .icons import icon_button
+from .text_edit import GrowingTextEdit
 
 
 class PronunciationGuide(QWidget):
     def __init__(self):
         super().__init__()
-        layout = QVBoxLayout(self)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 4, 0, 0)
-        layout.setSpacing(2)
-        row = QHBoxLayout()
-        row.addWidget(label("Pronunciation", True), 1)
-        self.copy = button("Copy pronunciation")
-        self.copy.setObjectName("quiet")
-        row.addWidget(self.copy)
-        layout.addLayout(row)
-        self.text = QPlainTextEdit()
+        layout.setSpacing(4)
+        self.text = GrowingTextEdit(minimum=38)
+        self.text.setObjectName("pronunciationText")
         self.text.setReadOnly(True)
         self.text.setAccessibleName("Pronunciation guide")
-        self.text.setFixedHeight(64)
-        self.text.setStyleSheet("font-size: 13px; color: #b6c9d2; padding: 2px;")
+        self.copy = icon_button("copy", "Copy pronunciation")
         self.copy.clicked.connect(lambda: QApplication.clipboard().setText(self.text.toPlainText()))
-        layout.addWidget(self.text)
+        layout.addWidget(self.text, 1)
+        layout.addWidget(self.copy)
         self.hide()
 
     def set_text(self, text):

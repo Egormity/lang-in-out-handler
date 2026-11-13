@@ -1,60 +1,14 @@
-"""Individual chunks remain speakable and floats expose actions, not preferences."""
+"""Continuous caption panes retain speech actions and minimal floating controls."""
 
 from dataclasses import replace
 
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QSignalSpy
-from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QSpinBox
+from PySide6.QtWidgets import QCheckBox, QComboBox, QSpinBox
 
 from lang_handler.settings import Settings
-from lang_handler.ui.entries import EntryList
 from lang_handler.ui.history import HistoryPage
 from lang_handler.ui.overlay import CaptionOverlay
-
-
-def test_entry_actions_target_only_their_own_text(qtbot):
-    entries = EntryList("Transcript", "Waiting")
-    qtbot.addWidget(entries)
-    speech = QSignalSpy(entries.speech_requested)
-    entries.append("こんにちは")
-    entries.append("おはよう")
-    entries.entries[1].speak.click()
-    entries.entries[0].copy.click()
-    assert speech.at(0) == ["おはよう"]
-    assert QApplication.clipboard().text() == "こんにちは"
-    entries.copy_all.click()
-    assert QApplication.clipboard().text() == "こんにちは\nおはよう"
-
-
-def test_entry_retention_is_bounded_and_clear_removes_actions(qtbot):
-    entries = EntryList("Transcript", "Waiting", max_entries=2)
-    qtbot.addWidget(entries)
-    for text in ("one", "two", " ", "three"):
-        entries.append(text)
-    assert len(entries.entries) == 2
-    assert entries.toPlainText() == "two\nthree"
-    entries.clear()
-    assert entries.entries == []
-    assert entries.toPlainText() == ""
-    assert not entries.copy_all.isEnabled()
-    assert not entries.empty.isHidden()
-
-
-def test_entries_follow_bottom_but_preserve_reader_scroll(qtbot):
-    entries = EntryList("Transcript", "Waiting")
-    qtbot.addWidget(entries)
-    entries.resize(340, 220)
-    entries.show()
-    for index in range(12):
-        entries.append(f"Caption {index}")
-    qtbot.wait(30)
-    scrollbar = entries.scroll.verticalScrollBar()
-    assert scrollbar.maximum() > 0
-    assert scrollbar.value() == scrollbar.maximum()
-    scrollbar.setValue(0)
-    entries.append("A later caption")
-    qtbot.wait(30)
-    assert scrollbar.value() == 0
 
 
 def test_caption_visibility_and_pin_only_change_through_preferences(qtbot):
@@ -83,7 +37,7 @@ def test_caption_speech_stop_is_separate_from_capture_and_clear(qtbot):
     stop_audio = QSignalSpy(overlay.speech_stop_requested)
     stop_capture = QSignalSpy(overlay.stop_requested)
     overlay.append_caption("日本語", "Japanese")
-    overlay.translation.entries[0].speak.click()
+    overlay.translation.speak.click()
     assert speech.at(0) == ["Japanese"]
     overlay.set_speech_active(True)
     assert not overlay.stop_audio_button.isHidden()

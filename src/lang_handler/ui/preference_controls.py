@@ -117,11 +117,11 @@ class PreferenceFields:
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         layout.addWidget(widget, 1)
-        reset = button("Reset")
+        reset = button("↺")
         reset.setObjectName("preferenceReset")
         reset.setAccessibleName(f"Reset {title.lower()}")
         reset.setToolTip(f"Restore the default for {title.lower()}.")
-        reset.setFixedWidth(58)
+        reset.setFixedSize(32, 32)
         layout.addWidget(reset, 0, Qt.AlignmentFlag.AlignTop)
         reset.clicked.connect(lambda: self.reset(key))
         self.reset_buttons[key] = reset

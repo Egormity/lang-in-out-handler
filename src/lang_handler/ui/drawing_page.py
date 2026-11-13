@@ -3,11 +3,11 @@
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLayout, QScrollArea, QVBoxLayout, QWidget
 
-from .common import button, label, title_block
+from .common import button, label
 from .drawing_window import DrawingWindow
 from .drawing_workspace import DrawingWorkspace
-from .sections import ExpandableSection
-from .tool_settings import ToolSettings
+from .icons import icon, icon_button
+from .tool_settings import ToolSettings, ToolSettingsDialog
 
 
 class DrawingPage(QWidget):
@@ -34,18 +34,21 @@ class DrawingPage(QWidget):
         self.scroll.setWidget(body)
         outer.addWidget(self.scroll)
         heading = QHBoxLayout()
-        heading.addWidget(
-            title_block("Handwriting", "Draw with your mouse or pen. Recognize with OpenAI."), 1
-        )
-        self.float_button = button("Float window")
+        title = label("Draw")
+        title.setObjectName("title")
+        heading.addWidget(title, 1)
+        self.float_button = button("Float")
+        self.float_button.setObjectName("quiet")
+        self.float_button.setIcon(icon("float"))
         self.float_button.clicked.connect(self.show_floating)
         heading.addWidget(self.float_button)
+        self.settings_button = icon_button("settings", "Handwriting settings")
+        heading.addWidget(self.settings_button)
         layout.addLayout(heading)
-        self.advanced = ExpandableSection("Settings")
         self.tool_settings = ToolSettings("drawing", settings)
         self.tool_settings.saved.connect(self.settings_saved)
-        self.advanced.body_layout.addWidget(self.tool_settings)
-        layout.addWidget(self.advanced)
+        self.settings_dialog = ToolSettingsDialog(self.tool_settings, "Handwriting", self)
+        self.settings_button.clicked.connect(self.settings_dialog.show_settings)
         self.workspace = DrawingWorkspace(settings)
         # Keep a single set of public controls for the existing controller interface.
         for name in (
@@ -93,7 +96,7 @@ class DrawingPage(QWidget):
             self.floating.set_workspace(self.workspace)
             self.is_floating = True
             self.placeholder.show()
-            self.float_button.setText("Show floating window")
+            self.float_button.setText("Show canvas")
         if not self._floating_positioned:
             self.floating.move(
                 self.window().frameGeometry().center() - self.floating.rect().center()
@@ -104,11 +107,11 @@ class DrawingPage(QWidget):
     def dock_workspace(self):
         if self.is_floating:
             self.floating.take_workspace()
-            self.body_layout.insertWidget(2, self.workspace, 1)
+            self.body_layout.insertWidget(1, self.workspace, 1)
             self.workspace.show()
             self.is_floating = False
             self.placeholder.hide()
-            self.float_button.setText("Float window")
+            self.float_button.setText("Float")
         self.floating.hide()
 
     def shutdown(self):
@@ -124,7 +127,7 @@ class DrawingPage(QWidget):
         self.send_button.setEnabled(not blank and not self.canvas.is_drawing)
         self.result.clear()
         if blank:
-            self.status.setText("Draw something to begin.")
+            self.status.setText("")
             self.cancel_requested.emit()
         elif self.canvas.is_drawing:
             self.status.setText("Drawing…")
@@ -152,7 +155,7 @@ class DrawingPage(QWidget):
         if revision == self.canvas.revision:
             self.result.set_items(items)
             self.status.setText(
-                "Choose a reading below." if items else "No readable handwriting found."
+                "" if items else "No readable handwriting found."
             )
 
     def set_busy(self, busy):

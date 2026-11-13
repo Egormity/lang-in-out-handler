@@ -25,7 +25,8 @@ def test_capture_uses_saved_preference_instructions(qtbot):
     preferences.save_button.click()
     order.clear()
     page.start_button.click()
-    assert order == [("settings", "Names: Sakura and Aoi"), ("output", True)]
+    assert order == [("output", True)]
+    assert window.settings.output_instructions == "Names: Sakura and Aoi"
 
 
 def test_split_results_do_not_duplicate_transcript(qtbot):
@@ -37,8 +38,13 @@ def test_split_results_do_not_duplicate_transcript(qtbot):
     assert page.results.toPlainText() == "こんにちは"
     assert page.translations.toPlainText() == "Hello"
     window.set_recording("output", True)
+    assert page.start_button.isHidden()
     assert not page.start_button.isEnabled()
+    assert not page.stop_button.isHidden()
     assert page.stop_button.isEnabled()
+    window.set_recording("output", False)
+    assert not page.start_button.isHidden()
+    assert page.stop_button.isHidden()
 
 
 def test_overlay_visibility_is_controlled_from_preferences(qtbot):
@@ -156,8 +162,12 @@ def test_settings_update_does_not_emit_feedback_and_key_clears(qtbot):
     qtbot.addWidget(window)
     settings = QSignalSpy(window.settings_saved)
     window.settings_saved.connect(window.update_settings)
-    window.sync_mode_settings()
+    assert window.sync_mode_settings() == window.settings
+    assert settings.count() == 0
+    window.pages["input"].source_language.setCurrentText("Japanese")
     assert settings.count() == 1
+    assert window.settings.input_language == "ja"
+    assert window.pages["input"].tool_settings.input_language.currentText() == "Japanese"
     preferences = window.pages["preferences"]
     saved_keys = QSignalSpy(window.key_saved)
     preferences.api_key.setText("unit-test-placeholder")
@@ -330,8 +340,9 @@ def test_caption_translation_option_updates_generation_and_visibility(qtbot):
     qtbot.addWidget(window)
     saved = QSignalSpy(window.settings_saved)
     page = window.pages["output"]
-    assert page.option.text() == "Show translation"
-    page.option.setChecked(False)
+    panel = page.tool_settings
+    panel.translation_visible.setChecked(False)
+    panel.save_button.click()
     assert not window.settings.translation_visible
     assert not window.settings.translation_enabled
     assert page.translations.isHidden()
@@ -340,7 +351,7 @@ def test_caption_translation_option_updates_generation_and_visibility(qtbot):
         replace(window.settings, translation_visible=True, translation_enabled=True)
     )
     assert saved.count() == 1
-    assert page.option.isChecked()
+    assert panel.translation_visible.isChecked()
 
 
 def test_preferences_are_global_and_tool_settings_are_on_their_pages(qtbot):
@@ -353,10 +364,11 @@ def test_preferences_are_global_and_tool_settings_are_on_their_pages(qtbot):
     assert set(page.models) == {"tts_model"}
     for mode in ("input", "output", "translate", "drawing"):
         assert window.pages[mode].tool_settings.mode == mode
-        assert window.pages[mode].advanced.toggle.text() == "Settings"
+        assert window.pages[mode].settings_button.accessibleName().endswith("settings")
+        assert not window.pages[mode].settings_dialog.isVisible()
 
 
-def test_tool_layouts_fit_at_minimum_window_size(qtbot):
+def test_tool_layouts_fit_and_settings_do_not_expand_into_the_work_area(qtbot):
     window = MainWindow(Settings(), True)
     qtbot.addWidget(window)
     window.show()
@@ -365,15 +377,23 @@ def test_tool_layouts_fit_at_minimum_window_size(qtbot):
         for mode in ("input", "output", "translate", "drawing"):
             window.show_page(mode)
             page = window.pages[mode]
-            for expanded in (False, True):
-                page.advanced.toggle.setChecked(expanded)
-                qtbot.wait(20)
-                assert page.scroll.horizontalScrollBar().maximum() == 0, (mode, expanded)
-                if not expanded:
-                    content = page.splitter if mode in ("output", "translate") else (
-                        page.results if mode == "input" else page.canvas
-                    )
-                    assert content.height() >= 100
+            qtbot.wait(20)
+            content = page.splitter if mode in ("output", "translate") else (
+                page.results if mode == "input" else page.canvas
+            )
+            assert content.height() >= 100
+            initial_size = content.size()
+            page.settings_button.click()
+            qtbot.wait(20)
+            dialog = page.settings_dialog
+            assert dialog.isVisible()
+            assert not dialog.isModal()
+            assert dialog.width() <= 600
+            assert dialog.scroll.horizontalScrollBar().maximum() == 0
+            assert page.tool_settings.actions.geometry().bottom() <= dialog.height()
+            assert content.size() == initial_size
+            dialog.close()
+
 
 
 def test_preferences_tabs_and_footer_remain_separate_at_minimum_size(qtbot):

@@ -8,3 +8,10 @@ class TranslationResult:
     translation: str
     source_pronunciation: str = ""
     translation_pronunciation: str = ""
+
+
+@dataclass(frozen=True)
+class CaptionRevision:
+    segment_id: int
+    source_text: str
+    result: TranslationResult

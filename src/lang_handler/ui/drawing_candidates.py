@@ -3,7 +3,8 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
-from .common import button, label
+from .common import label
+from .icons import icon_button
 
 
 class CandidateRow(QWidget):
@@ -12,21 +13,23 @@ class CandidateRow(QWidget):
     def __init__(self, text: str, index: int):
         super().__init__()
         self.text = text
+        self.setObjectName("candidateRow")
         row = QHBoxLayout(self)
-        row.setContentsMargins(2, 2, 2, 2)
+        row.setContentsMargins(4, 5, 4, 5)
         row.setSpacing(6)
         reading = QLabel(text)
         reading.setWordWrap(True)
+        reading.setStyleSheet("font-size: 20px;")
         reading.setTextFormat(Qt.TextFormat.PlainText)
         reading.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         reading.setAccessibleName(f"Candidate {index}: {text}")
         row.addWidget(reading, 1)
-        self.copy = button("Copy")
+        self.copy = icon_button("copy", f"Copy candidate {index}")
         self.copy.setObjectName("quiet")
         self.copy.setAccessibleName(f"Copy candidate {index}")
         self.copy.clicked.connect(lambda: QApplication.clipboard().setText(self.text))
         row.addWidget(self.copy)
-        self.speak = button("Speak")
+        self.speak = icon_button("speak", f"Speak candidate {index}")
         self.speak.setObjectName("quiet")
         self.speak.setAccessibleName(f"Speak candidate {index}")
         self.speak.clicked.connect(lambda: self.speech_requested.emit(self.text))
@@ -45,8 +48,8 @@ class DrawingCandidates(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
         header = QHBoxLayout()
-        header.addWidget(label("Readings"), 1)
-        self.stop = button("Stop audio")
+        header.addStretch()
+        self.stop = icon_button("stop", "Stop audio")
         self.stop.setObjectName("quiet")
         self.stop.clicked.connect(self.speech_stop_requested)
         self.stop.hide()
@@ -63,7 +66,8 @@ class DrawingCandidates(QWidget):
         layout.addWidget(self.scroll)
         self.empty = label("Recognized readings will appear here.", True)
         self.rows_layout.insertWidget(0, self.empty)
-        self.setMinimumHeight(110)
+        self.setMinimumHeight(90)
+        self.setMaximumHeight(190)
 
     def set_items(self, items: list[str]):
         self.clear()

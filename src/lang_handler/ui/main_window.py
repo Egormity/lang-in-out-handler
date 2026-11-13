@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QSize, QTimer, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QHBoxLayout,
@@ -21,6 +21,7 @@ from .capture_page import CapturePage
 from .common import button, label
 from .drawing_page import DrawingPage
 from .history import HistoryPage
+from .icons import icon, icon_button
 from .preferences import PreferencesPage
 from .speech_controls import SpeechControls
 from .text_pages import TranslatePage
@@ -62,16 +63,13 @@ class MainWindow(QMainWindow):
         content.setSpacing(0)
         sidebar = QWidget()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(188)
+        sidebar.setFixedWidth(180)
         nav = QVBoxLayout(sidebar)
         nav.setContentsMargins(14, 24, 14, 16)
         brand = QLabel("Lang In/Out")
         brand.setObjectName("brand")
         nav.addWidget(brand)
-        eyebrow = QLabel("YOUR LANGUAGE TOOLS")
-        eyebrow.setObjectName("eyebrow")
-        nav.addWidget(eyebrow)
-        nav.addSpacing(24)
+        nav.addSpacing(26)
         self.navigation = QButtonGroup(self)
         self.navigation.setExclusive(True)
         self.stack = QStackedWidget()
@@ -85,10 +83,10 @@ class MainWindow(QMainWindow):
         }
         self.nav_buttons = {}
         titles = {
-            "input": "Voice input",
-            "output": "Live captions",
+            "input": "Dictate",
+            "output": "Captions",
             "translate": "Translate",
-            "drawing": "Handwriting",
+            "drawing": "Draw",
             "history": "History",
             "preferences": "Preferences",
         }
@@ -97,6 +95,10 @@ class MainWindow(QMainWindow):
                 nav.addStretch()
             item = button(titles[mode])
             item.setObjectName("nav")
+            nav_icons = {"input": "mic", "output": "captions", "translate": "translate",
+                         "drawing": "draw", "history": "history", "preferences": "settings"}
+            item.setIcon(icon(nav_icons[mode]))
+            item.setIconSize(QSize(18, 18))
             item.setCheckable(True)
             item.clicked.connect(lambda checked=False, key=mode: self.show_page(key))
             self.navigation.addButton(item)
@@ -107,14 +109,11 @@ class MainWindow(QMainWindow):
         self.connection_badge = label("Key saved" if api_key_present else "API key needed")
         self.connection_badge.setObjectName("badge")
         nav.addWidget(self.connection_badge)
+        self.connection_badge.setVisible(not api_key_present)
         content.addWidget(sidebar)
         content.addWidget(self.stack, 1)
         shell.addLayout(content, 1)
-        self.status = QLabel(
-            "Ready. Choose a tool to get started."
-            if api_key_present
-            else "Add your OpenAI API key in Preferences to get started."
-        )
+        self.status = QLabel("Add your OpenAI API key in Preferences." if not api_key_present else "")
         self.status.setObjectName("status")
         self.status.setWordWrap(True)
         self.speech_controls = SpeechControls()
@@ -122,8 +121,19 @@ class MainWindow(QMainWindow):
         self.speech_controls.stop_requested.connect(self.speech_stop_requested)
         self.speech_controls.replay_requested.connect(self.speech_replay_requested)
         self.speech_controls.hide()
-        shell.addWidget(self.speech_controls)
-        shell.addWidget(self.status)
+        self.pages["preferences"].attach_speech_controls(self.speech_controls)
+        footer = QHBoxLayout()
+        footer.setContentsMargins(0, 0, 12, 0)
+        footer.addWidget(self.status, 1)
+        self.stop_audio = icon_button("stop", "Stop speech")
+        self.stop_audio.clicked.connect(self.speech_stop_requested)
+        self.stop_audio.hide()
+        footer.addWidget(self.stop_audio)
+        shell.addLayout(footer)
+        self.status.setVisible(not api_key_present)
+        self.status_timer = QTimer(self)
+        self.status_timer.setSingleShot(True)
+        self.status_timer.timeout.connect(self.status.hide)
         self.setCentralWidget(central)
         for editor in self.findChildren(QPlainTextEdit):
             editor.setTabChangesFocus(True)
@@ -161,14 +171,8 @@ class MainWindow(QMainWindow):
         self.pages["history"].refresh_requested.connect(self.history_refresh_requested)
 
     def sync_mode_settings(self):
-        """Commit current mode controls before a request, including shortcut requests."""
-        self._apply_settings_patch({
-            "target_language": self.pages["translate"].target.currentText() or "English",
-            "input_chunked": self.pages["input"].chunked(),
-            "output_chunked": self.pages["output"].chunked(),
-            "translation_enabled": self.pages["output"].option.isChecked(),
-            "translation_visible": self.pages["output"].option.isChecked(),
-        })
+        """Quick controls save immediately; settings dialogs keep drafts until Save."""
+        return self.settings
 
     def _apply_settings_patch(self, patch):
         settings = replace(self.settings, **patch)
@@ -214,7 +218,11 @@ class MainWindow(QMainWindow):
             self.history_refresh_requested.emit()
 
     def set_status(self, text: str, error: bool = False):
+        self.status_timer.stop()
         self.status.setText(text)
+        self.status.setVisible(bool(text))
+        if text and not error:
+            self.status_timer.start(6000)
         self.status.setProperty("error", error)
         self.status.style().unpolish(self.status)
         self.status.style().polish(self.status)
@@ -223,7 +231,7 @@ class MainWindow(QMainWindow):
         if mode in ("input", "output"):
             self.pages[mode].set_recording(active)
             self.nav_buttons[mode].setText(
-                ("●  " if active else "") + ("Voice input" if mode == "input" else "Live captions")
+                ("●  " if active else "") + ("Dictate" if mode == "input" else "Captions")
             )
 
     def append_result(self, mode: str, text: str, translation="", *, segment_id=None):
@@ -233,13 +241,14 @@ class MainWindow(QMainWindow):
         result = translation if isinstance(translation, TranslationResult) else TranslationResult(translation)
         page.results.append(text, result.source_pronunciation, segment_id=segment_id)
         if page.translations:
-            page.translations.append(result.translation, result.translation_pronunciation)
+            page.translations.append(result.translation, result.translation_pronunciation, segment_id=segment_id)
 
     def annotate_translation(self, mode, segment_id, result):
         page = self.pages[mode]
-        visible = page.results.set_pronunciation_for(segment_id, result.source_pronunciation)
-        if visible and page.translations:
-            page.translations.append(result.translation, result.translation_pronunciation)
+        if page.results.contains(segment_id):
+            page.results.revise(segment_id, pronunciation=result.source_pronunciation)
+            if page.translations:
+                page.translations.upsert(segment_id, result.translation, result.translation_pronunciation)
 
     def set_translation(self, result, source_text=None, target_language=None):
         if isinstance(result, str):
@@ -252,6 +261,7 @@ class MainWindow(QMainWindow):
 
     def set_speech_active(self, active):
         self.speech_controls.stop.setEnabled(active)
+        self.stop_audio.setVisible(active)
         if active:
             self.speech_controls.show()
         self.pages["drawing"].set_speech_active(active)
@@ -298,6 +308,7 @@ class MainWindow(QMainWindow):
         else:
             badge = "Key saved"
         self.connection_badge.setText(badge)
+        self.connection_badge.setVisible(badge == "API key needed")
         self.pages["preferences"].remove_key_button.setEnabled(badge != "API key needed")
 
     def key_saved_successfully(self):

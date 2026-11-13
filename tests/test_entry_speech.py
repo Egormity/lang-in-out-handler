@@ -31,11 +31,11 @@ def test_every_entry_uses_saved_voice_and_instructions(controller, qtbot, monkey
     c.window.set_source_text("translate", "original")
     c.window.set_translation("translation")
     buttons = [
-        (c.window.pages["input"].results.entries[0].speak, "microphone"),
-        (c.window.pages["output"].results.entries[0].speak, "output"),
-        (c.window.pages["output"].translations.entries[0].speak, "translated output"),
-        (c.overlay.transcript.entries[0].speak, "floating source"),
-        (c.overlay.translation.entries[0].speak, "floating translation"),
+        (c.window.pages["input"].results.speak, "microphone"),
+        (c.window.pages["output"].results.speak, "output"),
+        (c.window.pages["output"].translations.speak, "translated output"),
+        (c.overlay.transcript.speak, "floating source"),
+        (c.overlay.translation.speak, "floating translation"),
         (drawing.result.rows[1].speak, "second candidate"),
         (c.window.pages["translate"].speak_original, "original"),
         (c.window.pages["translate"].speak_translation, "translation"),
@@ -70,7 +70,7 @@ def test_floating_stop_cancels_pending_speech_without_playback(controller, qtbot
     monkeypatch.setattr("lang_handler.workflows.OpenAIService", Service)
     c = controller
     c.overlay.append_caption("sample")
-    c.overlay.transcript.entries[0].speak.click()
+    c.overlay.transcript.speak.click()
     try:
         qtbot.waitUntil(started.is_set)
         assert not c.overlay.stop_audio_button.isHidden()

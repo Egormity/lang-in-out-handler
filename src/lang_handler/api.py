@@ -7,10 +7,11 @@ from pathlib import Path
 import httpx
 from openai import OpenAI
 
+from .caption_context import caption_options, parse_revisions, validate_segments
 from .errors import ServiceError, service_error
 from .network import proxy_url
 from .reasoning import reasoning_options
-from .results import TranslationResult
+from .results import CaptionRevision, TranslationResult
 
 MAX_AUDIO_BYTES = 25 * 1024 * 1024
 
@@ -137,6 +138,28 @@ class OpenAIService:
                 raise ServiceError("The model returned an invalid translation result. Try again.")
             return TranslationResult(**{key: payload[key].strip() for key in fields})
         except Exception as error:  # noqa: BLE001 - sanitize every SDK/proxy failure at this boundary
+            raise service_error(error, self._key) from None
+
+    def revise_captions(
+        self,
+        segments: list[tuple[int, str]],
+        model: str,
+        target_language: str,
+        instructions: str = "",
+        reasoning: str = "medium",
+    ) -> list[CaptionRevision]:
+        segments = validate_segments(segments)
+        if not target_language.strip():
+            raise ServiceError("Choose a target language in the caption settings.")
+        options = {
+            "model": model,
+            **caption_options(segments, target_language.strip(), instructions),
+            **reasoning_options(model, reasoning),
+        }
+        try:
+            response = self._client.responses.create(**options)
+            return parse_revisions(response.output_text, segments)
+        except Exception as error:  # noqa: BLE001 - sanitize SDK failures at the service boundary
             raise service_error(error, self._key) from None
 
     def synthesize(

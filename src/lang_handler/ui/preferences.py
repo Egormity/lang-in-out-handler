@@ -24,9 +24,9 @@ class PreferencesPage(QWidget):
         self.reset_buttons = self.fields.reset_buttons
         self.instructions = {}
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(24, 24, 24, 20)
+        outer.setContentsMargins(28, 24, 28, 20)
         outer.setSpacing(16)
-        outer.addWidget(title_block("Preferences", "Connection, shared speech, and global shortcuts. Tool settings are on their own pages."))
+        outer.addWidget(title_block("Preferences", ""))
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self.tabs.tabBar().setDrawBase(False)
@@ -46,9 +46,9 @@ class PreferencesPage(QWidget):
         )
         self.reset_all_button.clicked.connect(self.reset_all)
         row.addWidget(self.reset_all_button)
-        self.save_hint = label("Save to apply changes.", True)
+        self.save_hint = label("", True)
         row.addWidget(self.save_hint, 1)
-        self.save_preferences = button("Save preferences", True)
+        self.save_preferences = button("Save", True)
         self.save_preferences.clicked.connect(lambda: self.saved.emit(self.collect()))
         row.addWidget(self.save_preferences)
         outer.addLayout(row)
@@ -56,7 +56,6 @@ class PreferencesPage(QWidget):
 
     def _connection(self, settings, api_key_present):
         scroll, layout = scrollable_body()
-        layout.addWidget(label("Your API key connects every tool to your OpenAI account.", True))
         form = preference_sections.group("OpenAI API key", layout)
         self.api_key = QLineEdit()
         self.api_key.setEchoMode(QLineEdit.EchoMode.Password)
@@ -97,7 +96,7 @@ class PreferencesPage(QWidget):
         self.fields.add(form, "Proxy override", "api_proxy_url", self.api_proxy_url)
         form.addRow(
             label(
-                "Test connection checks the key and proxy entered here. API usage is billed to your OpenAI account.",
+                "Leave the proxy blank to use your system connection.",
                 True,
             )
         )
@@ -131,13 +130,18 @@ class PreferencesPage(QWidget):
     def set_models(self, model_ids):
         update_model_choices(self.models, model_ids)
 
+    def attach_speech_controls(self, controls):
+        """Keep saved-audio actions with the shared voice preferences."""
+        body = self.tabs.widget(1).widget().layout()
+        body.insertWidget(body.count() - 1, controls)
+
     def update_settings(self, settings):
         self.settings = settings
         self.fields.update(settings)
         self.save_hint.setText(
-            "Unsaved changes. Save to apply."
+            "Unsaved changes"
             if self.fields.has_pending
-            else "Save to apply changes."
+            else ""
         )
 
     def set_sources(self, sources):

@@ -9,8 +9,8 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from .api import OpenAIService
-from .audio import audio_file_chunks
 from .desktop import play_audio
+from .file_import import FileImports
 
 
 class Workflows(QObject):
@@ -19,8 +19,9 @@ class Workflows(QObject):
     def __init__(self, controller):
         super().__init__(controller)
         self.c = controller
-        self.imports = {}
-        self.import_generations = {}
+        self.files = FileImports(controller)
+        self.imports = self.files.imports
+        self.import_generations = self.files.generations
         self.speech_job = None
         self.translation_job = None
         self.player = None
@@ -30,88 +31,7 @@ class Workflows(QObject):
         self.playback_timer.timeout.connect(self._playback_status)
 
     def import_file(self, mode, path, chunked):
-        key = self.c.require_key()
-        if not key:
-            return
-        if mode in self.imports or self.c.captures[mode].is_running:
-            self.c.fail("Stop the current recording or file import first.")
-            return
-        settings = deepcopy(self.c.settings)
-        generation = self.import_generations.get(mode, 0) + 1
-        self.import_generations[mode] = generation
-        model = getattr(settings, f"{mode}_model")
-        self.c.window.set_recording(mode, True)
-        self.c.status("Transcribing audio file…")
-        if mode == "output":
-            self.c.show_overlay()
-            self.c.overlay.set_status("Transcribing audio file…")
-
-        def work(cancel, progress):
-            service = OpenAIService(key, proxy=settings.api_proxy_url or None)
-            count = 0
-            try:
-                chunks = audio_file_chunks(Path(path), getattr(settings, f"{mode}_chunk_seconds") if chunked else None)
-                for audio in chunks:
-                    if cancel.is_set():
-                        break
-                    text = service.transcribe(
-                        audio,
-                        model,
-                        getattr(settings, f"{mode}_language"),
-                        getattr(settings, f"{mode}_instructions"),
-                    )
-                    if cancel.is_set():
-                        break
-                    translated = ""
-                    if text and mode == "output" and settings.translation_enabled:
-                        try:
-                            translated = service.translate(
-                                text,
-                                settings.translation_model,
-                                settings.target_language,
-                                settings.translation_instructions,
-                                settings.translation_reasoning,
-                            )
-                        except Exception:  # preserve recognized speech before reporting the failure
-                            if not cancel.is_set():
-                                progress((text, ""))
-                            raise
-                    if text and not cancel.is_set():
-                        progress((text, translated))
-                        count += 1
-                return count
-            finally:
-                service.close()
-
-        def progress(pair):
-            if mode not in self.imports or self.import_generations.get(mode) != generation:
-                return
-            text, translated = pair
-            self.c.window.append_result(mode, text, translated)
-            if mode == "output":
-                self.c.overlay.append_caption(text, translated)
-            self.c.remember(mode, text, translated, model)
-
-        def done():
-            if self.import_generations.get(mode) != generation:
-                return
-            self.imports.pop(mode, None)
-            self.c.window.set_recording(mode, False)
-
-        def completed(count):
-            if self.import_generations.get(mode) == generation:
-                self.c.status(f"File complete: {count} segment(s).")
-                if mode == "output":
-                    self.c.overlay.set_status("File complete.")
-
-        def failed(message):
-            if self.import_generations.get(mode) == generation:
-                self.c.fail(message)
-                if mode == "output":
-                    self.c.overlay.set_status(message)
-
-        job = self.c.jobs.submit(work, completed, failed, progress, done)
-        self.imports[mode] = job
+        self.files.start(mode, path, chunked)
 
     def translate(self, text):
         key = self.c.require_key()
@@ -203,7 +123,7 @@ class Workflows(QObject):
             self.player = play_audio(path)
             self.playback_timer.start()
             self.speech_active_changed.emit(True)
-            self.c.status("Playing AI-generated speech.")
+            self.c.status("Reading aloud…")
         except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
             self.c.fail(str(exc))
 
@@ -228,18 +148,10 @@ class Workflows(QObject):
         self.speech_active_changed.emit(False)
 
     def cancel_import(self, mode):
-        job = self.imports.pop(mode, None)
-        if job:
-            self.import_generations[mode] = self.import_generations.get(mode, 0) + 1
-            job.cancelled.set()
-            self.c.window.set_recording(mode, False)
-            self.c.status("File import cancelled; completed segments remain in history.")
+        self.files.cancel(mode)
 
     def shutdown(self):
         self.stop_speech()
-        for mode, job in self.imports.items():
-            self.import_generations[mode] = self.import_generations.get(mode, 0) + 1
-            job.cancelled.set()
-        self.imports.clear()
+        self.files.shutdown()
         for path in self.audio_files:
             path.unlink(missing_ok=True)
