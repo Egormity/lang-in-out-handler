@@ -4,6 +4,7 @@ import subprocess
 import sys
 from copy import deepcopy
 from dataclasses import replace
+from uuid import uuid4
 
 from PySide6.QtCore import QObject
 
@@ -37,6 +38,7 @@ class Controller(QObject):
         self.applied_shortcuts = None
         self.accept_audio = {"input": True, "output": True}
         self.caption_history = {}
+        self.history_sessions = {}
         self.captures = {mode: AudioCapture(self) for mode in ("input", "output")}
         self.recording_cues = RecordingCues(self)
         self.captures["input"].started.connect(self.recording_cues.recording_started)
@@ -176,6 +178,7 @@ class Controller(QObject):
             self.status("Finishing the previous recording. Please wait before starting another.")
             return
         self.pipeline.begin_session(mode)
+        self.history_sessions[mode] = uuid4().hex
         try:
             source = self.settings.microphone_source if mode == "input" else self.settings.output_source or "@DEFAULT_MONITOR@"
             self.accept_audio[mode] = True
@@ -227,8 +230,11 @@ class Controller(QObject):
         names = (mode, "translation") if mode == "output" else (mode,)
         return any(self.pipeline.busy[name] or self.pipeline.queues[name] for name in names)
 
-    def remember_segment(self, mode, segment_id, text, model):
-        record_id = self.store.add_history(mode, text, "", model)
+    def remember_segment(self, mode, segment_id, text, model, *, session_id=None):
+        record_id = self.store.add_history(
+            mode, text, "", model,
+            session_id=self.history_sessions.get(mode, "") if session_id is None else session_id,
+        )
         if mode == "output":
             self.caption_history[segment_id] = record_id
             # Only the rolling context can be revised; keep a generous bounded map.

@@ -52,11 +52,11 @@ def test_threaded_history_is_serialized(tmp_path):
 
 def test_future_database_is_not_silently_downgraded(tmp_path):
     with sqlite3.connect(tmp_path / "history.sqlite3") as database:
-        database.execute("PRAGMA user_version=3")
+        database.execute("PRAGMA user_version=4")
     with pytest.raises(RuntimeError, match="newer version"):
         Store(tmp_path)
     with sqlite3.connect(tmp_path / "history.sqlite3") as database:
-        assert database.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert database.execute("PRAGMA user_version").fetchone()[0] == 4
 
 
 def test_secret_uses_keyring_and_never_database(tmp_path, monkeypatch):
@@ -167,6 +167,8 @@ def test_v1_upgrade_preserves_history_preferences_and_identifiers(tmp_path):
         "created_at": timestamp,
         "source_pronunciation": "",
         "translation_pronunciation": "",
+        "session_id": "",
+        "segment_count": 1,
     }
     next_id = store.add_history(
         "translate", "日本語", "Japanese", source_pronunciation="Nihongo"
@@ -174,7 +176,7 @@ def test_v1_upgrade_preserves_history_preferences_and_identifiers(tmp_path):
     assert next_id > 44
     store.close()
     with sqlite3.connect(path) as database:
-        assert database.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert database.execute("PRAGMA user_version").fetchone()[0] == 3
         assert database.execute("SELECT value FROM preferences WHERE key='settings'").fetchone()[0] == preferences
     # Reopening must not rerun an ALTER or lose the newly added text.
     reopened = Store(tmp_path)
@@ -187,6 +189,6 @@ def test_new_database_uses_the_same_schema_head(tmp_path):
     store = Store(tmp_path)
     store.close()
     with sqlite3.connect(tmp_path / "history.sqlite3") as database:
-        assert database.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert database.execute("PRAGMA user_version").fetchone()[0] == 3
         columns = {row[1] for row in database.execute("PRAGMA table_info(history)")}
-        assert {"source_pronunciation", "translation_pronunciation"}.issubset(columns)
+        assert {"source_pronunciation", "translation_pronunciation", "session_id"}.issubset(columns)

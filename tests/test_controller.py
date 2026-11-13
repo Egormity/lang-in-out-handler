@@ -166,9 +166,10 @@ def test_file_import_keeps_each_transcript_paired_with_translation(controller, q
         "lang_handler.file_import.audio_file_chunks", lambda *args: iter([b"first", b"second"])
     )
     controller.window.file_requested.emit("output", "test.wav", True)
-    qtbot.waitUntil(lambda: len(controller.store.list_history()) == 2)
     qtbot.waitUntil(lambda: not controller.workflows.imports)
-    rows = list(reversed(controller.store.list_history()))
+    assert len(controller.store.list_history()) == 1
+    assert controller.store.list_history()[0]["source_text"] == "first second"
+    rows = list(reversed(controller.store.list_history_segments()))
     assert [(row["source_text"], row["translated_text"]) for row in rows] == [
         ("first", "translation: first"),
         ("second", "translation: second"),

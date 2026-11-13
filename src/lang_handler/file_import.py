@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from pathlib import Path
+from uuid import uuid4
 
 from PySide6.QtCore import QObject
 
@@ -29,6 +30,7 @@ class FileImports(QObject):
             return
         settings = deepcopy(self.c.settings)
         generation = self.generations.get(mode, 0) + 1
+        session_id = uuid4().hex
         self.generations[mode] = generation
         model = getattr(settings, f"{mode}_model")
         self.c.window.set_recording(mode, True)
@@ -77,7 +79,7 @@ class FileImports(QObject):
                 return
             if event[0] == "source":
                 _, segment_id, text = event
-                self.c.remember_segment(mode, segment_id, text, model)
+                self.c.remember_segment(mode, segment_id, text, model, session_id=session_id)
                 self.c.window.append_result(mode, text, segment_id=segment_id)
                 if mode == "output":
                     self.c.overlay.append_caption(text, segment_id=segment_id)

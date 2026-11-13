@@ -56,7 +56,8 @@ def test_file_context_revises_previous_record_in_place(controller, qtbot, monkey
     assert len(calls) == 2
     assert calls[1][0] == calls[0][0]
     assert len(calls[1]) == 2
-    rows = list(reversed(c.store.list_history()))
+    assert len(c.store.list_history()) == 1
+    rows = list(reversed(c.store.list_history_segments()))
     assert len(rows) == 2
     assert [row["source_text"] for row in rows] == ["first", "second"]
     assert [row["translated_text"] for row in rows] == ["bridge", "bridge"]

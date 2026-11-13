@@ -10,7 +10,7 @@ A Linux desktop app for dictation, live bilingual captions, translation, and tex
 | Captions | Capture the default speaker output, including browser and media-player audio. Show one continuous transcript and translation side by side. New context can revise recent translations in place. |
 | Translate | Translate text with pronunciation guides and optional “Did you mean?” suggestions. Choose Use to apply a correction and translate it. Original text stays unchanged otherwise. |
 | Draw | Draw with a mouse or tablet pen, in the main window or an always-on-top floating canvas. Recognize automatically or use Recognize, then copy or speak individual candidate readings. |
-| History | Search, browse, copy, or speak locally saved text; delete history from the app. |
+| History | Each Dictate or Captions recording/import appears as one combined entry. Search, copy, or speak the full session; delete history from the app. |
 
 The sidebar keeps Dictate, Captions, Translate, and Draw one click away. Primary actions sit at the top of each page. Each tool’s **settings gear** opens its settings inside the app; **Back** returns to the tool. Source and target language selectors sit directly above their text panes; Draw has its language selector above the canvas. **Preferences** contains only the API connection, shared speech playback settings, and global shortcuts. Speech settings apply to every **Speak** button. Recognition instructions supply vocabulary/context to the speech model; they are not a general text-editing instruction.
 
@@ -85,7 +85,7 @@ For background clipboard access and automatic insertion on Wayland, install `wl-
 
 ## Audio and captions
 
-Captions are continuous documents. Audio still arrives in bounded chunks internally, but the translator receives recent source context and can revise earlier wording. The main and floating windows replace the affected text in place, while preserving selection and scroll position. History rows are updated rather than duplicated.
+Captions are continuous documents. Audio still arrives in bounded chunks internally, but the translator receives recent source context and can revise earlier wording. The main and floating windows replace the affected text in place, while preserving selection and scroll position. History combines each recording or imported file into one entry, while revisions update its underlying segments in place. Separate recordings stay separate. Older history lacks session identifiers, so those existing entries remain unchanged.
 
 The revision window contains the last six recognized segments, with about 6,000 source characters maximum (a single longer recording remains intact). Older translated text stays visible and saved, but stops being reconsidered once it leaves this window. At most one revision request runs with one newest snapshot waiting. Newer snapshots replace redundant waiting requests. A new capture session or translation-configuration change starts a fresh context. File imports use the same revision behavior.
 

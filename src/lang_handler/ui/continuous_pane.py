@@ -4,22 +4,8 @@ from collections import OrderedDict
 
 from PySide6.QtGui import QTextCursor
 
+from ..text_utils import flowing_text
 from .common import TextPane
-
-
-def flowing_text(parts):
-    result = ""
-    for part in parts:
-        part = part.strip()
-        if not part:
-            continue
-        if result and not result[-1].isspace() and not part[0].isspace():
-            left_cjk = "\u3000" <= result[-1] <= "\u9fff" or "\uac00" <= result[-1] <= "\ud7af"
-            right_cjk = "\u3000" <= part[0] <= "\u9fff" or "\uac00" <= part[0] <= "\ud7af"
-            if not (left_cjk and right_cjk) and part[0] not in ".,!?;:)]}、。！？":
-                result += " "
-        result += part
-    return result
 
 
 class ContinuousPane(TextPane):

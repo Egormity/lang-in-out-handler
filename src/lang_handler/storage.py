@@ -6,6 +6,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
+from .history_sessions import combine_sessions
 from .settings import Settings
 
 
@@ -27,7 +28,7 @@ class Store:
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA foreign_keys=ON")
         version = self._db.execute("PRAGMA user_version").fetchone()[0]
-        if version > 2:
+        if version > 3:
             self._db.close()
             raise RuntimeError("This history database requires a newer version of Lang In/Out.")
         try:
@@ -37,7 +38,7 @@ class Store:
             raise
 
     def _initialize_schema(self, version: int) -> None:
-        # One schema head. Existing v1 history is upgraded additively in the same
+        # One schema head. Existing history is upgraded additively in the same
         # transaction as the version marker, keeping IDs, timestamps, and settings.
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
@@ -55,6 +56,7 @@ class Store:
                     translated_text TEXT NOT NULL DEFAULT '',
                     source_pronunciation TEXT NOT NULL DEFAULT '',
                     translation_pronunciation TEXT NOT NULL DEFAULT '',
+                    session_id TEXT NOT NULL DEFAULT '',
                     model TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
                 )
@@ -66,7 +68,16 @@ class Store:
                         self._db.execute(
                             f"ALTER TABLE history ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
                         )
-            self._db.execute("PRAGMA user_version=2")
+            if version < 3:
+                columns = {row["name"] for row in self._db.execute("PRAGMA table_info(history)")}
+                if "session_id" not in columns:
+                    self._db.execute(
+                        "ALTER TABLE history ADD COLUMN session_id TEXT NOT NULL DEFAULT ''"
+                    )
+            self._db.execute(
+                "CREATE INDEX IF NOT EXISTS history_session_order ON history(mode, session_id, id)"
+            )
+            self._db.execute("PRAGMA user_version=3")
 
     def load_settings(self) -> Settings:
         with self._lock:
@@ -99,11 +110,12 @@ class Store:
         *,
         source_pronunciation: str = "",
         translation_pronunciation: str = "",
+        session_id: str = "",
     ) -> int:
         with self._lock, self._db:
             cursor = self._db.execute(
                 "INSERT INTO history(mode,source_text,translated_text,model,"
-                "source_pronunciation,translation_pronunciation) VALUES(?,?,?,?,?,?)",
+                "source_pronunciation,translation_pronunciation,session_id) VALUES(?,?,?,?,?,?,?)",
                 (
                     mode,
                     source_text,
@@ -111,6 +123,7 @@ class Store:
                     model,
                     source_pronunciation,
                     translation_pronunciation,
+                    session_id,
                 ),
             )
             return int(cursor.lastrowid)
@@ -129,9 +142,41 @@ class Store:
             return bool(cursor.rowcount)
 
     def list_history(self, limit: int = 100) -> list[dict]:
+        """Return complete sessions; the limit counts entries, never individual chunks."""
         with self._lock:
             rows = self._db.execute(
-                "SELECT * FROM history ORDER BY id DESC LIMIT ?", (max(1, min(limit, 10000)),)
+                """
+                WITH recent AS (
+                    SELECT mode, session_id, MIN(id) AS first_id, MAX(id) AS latest_id
+                    FROM history
+                    GROUP BY mode, session_id, CASE WHEN session_id='' THEN id ELSE 0 END
+                    ORDER BY latest_id DESC LIMIT ?
+                )
+                SELECT history.* FROM history JOIN recent
+                    ON history.mode=recent.mode AND history.session_id=recent.session_id
+                    AND (history.session_id<>'' OR history.id=recent.first_id)
+                ORDER BY recent.latest_id DESC, history.id ASC
+                """,
+                (max(1, min(limit, 10000)),),
+            ).fetchall()
+        return combine_sessions(rows)
+
+    def list_history_segments(
+        self, limit: int = 100, *, session_id: str | None = None, mode: str | None = None
+    ) -> list[dict]:
+        """Inspect the stored fragments used for contextual revisions, newest first."""
+        filters, values = [], []
+        if session_id is not None:
+            filters.append("session_id=?")
+            values.append(session_id)
+        if mode is not None:
+            filters.append("mode=?")
+            values.append(mode)
+        where = " WHERE " + " AND ".join(filters) if filters else ""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM history" + where + " ORDER BY id DESC LIMIT ?",
+                (*values, max(1, min(limit, 10000))),
             ).fetchall()
         return [dict(row) for row in rows]
 
