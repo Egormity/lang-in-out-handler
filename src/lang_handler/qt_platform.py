@@ -1,4 +1,4 @@
-"""Select XWayland for desktop keep-above and load optional user-local Qt libraries."""
+"""Prefer native desktop input and load optional X11 libraries when needed."""
 
 from __future__ import annotations
 
@@ -11,16 +11,22 @@ from pathlib import Path
 def configure_platform() -> str:
     """Call before constructing QApplication; explicit test/platform overrides win.
 
-    GNOME's native Wayland protocol doesn't implement arbitrary always-on-top
-    requests. XWayland exposes the window-manager hint needed by our overlay.
-    Ubuntu's optional xcb-cursor package can be installed locally by bootstrap.
+    Native Wayland is required for reliable XP-Pen input on GNOME. Forcing
+    XWayland can prevent the tablet from interacting with every app control,
+    not just the canvas. GNOME's keep-above support is handled separately.
+    Explicit xcb selection and real X11 sessions still load optional cursor
+    libraries installed by the user-local bootstrap.
     """
     if sys.platform != "linux":
         return os.environ.get("QT_QPA_PLATFORM", "")
     platform = os.environ.get("QT_QPA_PLATFORM")
-    if not platform and os.environ.get("DISPLAY"):
-        platform = "xcb"
-        os.environ["QT_QPA_PLATFORM"] = platform
+    if not platform:
+        if os.environ.get("WAYLAND_DISPLAY") or os.environ.get("XDG_SESSION_TYPE") == "wayland":
+            platform = "wayland"
+        elif os.environ.get("DISPLAY"):
+            platform = "xcb"
+        if platform:
+            os.environ["QT_QPA_PLATFORM"] = platform
     if platform != "xcb":
         return platform or "wayland"
     local = Path(sys.prefix) / "lib" / "lang-in-out-system"

@@ -42,6 +42,7 @@ class Workflows(QObject):
         self.c.status("Transcribing audio file…")
         if mode == "output":
             self.c.show_overlay()
+            self.c.overlay.set_status("Transcribing audio file…")
 
         def work(cancel, progress):
             service = OpenAIService(key, proxy=settings.api_proxy_url or None)
@@ -97,10 +98,14 @@ class Workflows(QObject):
         def completed(count):
             if self.import_generations.get(mode) == generation:
                 self.c.status(f"File complete: {count} segment(s).")
+                if mode == "output":
+                    self.c.overlay.set_status("File complete.")
 
         def failed(message):
             if self.import_generations.get(mode) == generation:
                 self.c.fail(message)
+                if mode == "output":
+                    self.c.overlay.set_status(message)
 
         job = self.c.jobs.submit(work, completed, failed, progress, done)
         self.imports[mode] = job

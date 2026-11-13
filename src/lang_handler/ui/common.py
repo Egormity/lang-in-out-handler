@@ -82,15 +82,20 @@ def language_value(widget: QComboBox) -> str:
 class TextPane(QWidget):
     def __init__(self, title: str, placeholder: str, read_only: bool = True):
         super().__init__()
+        self.setObjectName("textPane")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(12, 8, 12, 10)
+        layout.setSpacing(6)
         row = QHBoxLayout()
         row.addWidget(label(title))
         row.addStretch()
         copy = button("Copy")
+        copy.setObjectName("quiet")
         copy.setMaximumWidth(85)
         row.addWidget(copy)
         self.text = QPlainTextEdit()
+        self.text.setMinimumWidth(0)
         self.text.setReadOnly(read_only)
         self.text.setAccessibleName(title)
         self.text.setTabChangesFocus(True)
@@ -99,6 +104,14 @@ class TextPane(QWidget):
         copy.clicked.connect(lambda: QApplication.clipboard().setText(self.text.toPlainText()))
         layout.addLayout(row)
         layout.addWidget(self.text)
+        self.actions = QHBoxLayout()
+        self.actions.addStretch()
+        layout.addLayout(self.actions)
+
+    def add_action(self, text: str) -> QPushButton:
+        action = button(text)
+        self.actions.addWidget(action)
+        return action
 
     def append(self, text: str):
         if text.strip():

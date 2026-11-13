@@ -2,9 +2,10 @@
 
 from dataclasses import replace
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QSplitter, QVBoxLayout, QWidget
 
+from ..window_pin import WindowPin
 from .common import TextPane, button, label
 from .theme import STYLE
 
@@ -17,7 +18,7 @@ class CaptionOverlay(QWidget):
         super().__init__()
         self.settings = settings
         self.setWindowTitle("Lang In/Out · Captions")
-        self.setWindowFlags(Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setStyleSheet(STYLE)
         self.resize(900, 330)
@@ -27,18 +28,13 @@ class CaptionOverlay(QWidget):
         toolbar = QHBoxLayout()
         self.transcript_toggle = QCheckBox("Transcript")
         self.translation_toggle = QCheckBox("Translation")
-        self.generate_toggle = QCheckBox("Translate audio")
-        for toggle in (self.transcript_toggle, self.translation_toggle, self.generate_toggle):
+        for toggle in (self.transcript_toggle, self.translation_toggle):
             toggle.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             toolbar.addWidget(toggle)
-        self.transcript_toggle.setToolTip(
-            "Show or hide the transcript pane. Recognition continues because translation uses the transcript."
-        )
-        self.translation_toggle.setToolTip("Show or hide the translated text pane.")
-        self.generate_toggle.setToolTip(
-            "Enable translation requests. Hiding a pane does not disable translation."
-        )
+        self.translation_toggle.setToolTip("Show translated captions.")
         toolbar.addStretch()
+        self.pin = QCheckBox("On top")
+        toolbar.addWidget(self.pin)
         hide = button("Hide")
         hide.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         hide.clicked.connect(self.hide)
@@ -48,6 +44,11 @@ class CaptionOverlay(QWidget):
         toolbar.addWidget(hide)
         toolbar.addWidget(stop)
         layout.addLayout(toolbar)
+        self.pin_status = QLabel()
+        self.pin_status.setObjectName("muted")
+        self.pin_status.setWordWrap(True)
+        self.pin_status.hide()
+        layout.addWidget(self.pin_status)
         self.splitter = QSplitter()
         self.transcript = TextPane("TRANSCRIPT", "Listening for speech…")
         self.translation = TextPane("TRANSLATION", "Translated captions will appear here.")
@@ -61,6 +62,7 @@ class CaptionOverlay(QWidget):
         self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.empty, 1)
         self.status = QLabel("Ready")
+        self.status.setWordWrap(True)
         self.status.setObjectName("muted")
         footer = QHBoxLayout()
         footer.addWidget(self.status, 1)
@@ -75,14 +77,30 @@ class CaptionOverlay(QWidget):
         self.update_settings(settings)
         self.transcript_toggle.toggled.connect(self._changed)
         self.translation_toggle.toggled.connect(self._changed)
-        self.generate_toggle.toggled.connect(self._changed)
+        self.pin_control = WindowPin(self)
+        self.pin_control.changed.connect(self._pin_state)
+        self.pin_control.message.connect(self._pin_message)
+        self.pin.toggled.connect(lambda enabled: self.pin_control.request(enabled, activate=True))
+        self.pin_control.request(True)
+
+    def _pin_state(self, enabled):
+        with QSignalBlocker(self.pin):
+            self.pin.setChecked(enabled)
+
+    def _pin_message(self, message):
+        self.pin_status.setText(message)
+        self.pin_status.setVisible(bool(message))
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.pin_control.on_show()
 
     def _changed(self):
         self.settings = replace(
             self.settings,
             transcript_visible=self.transcript_toggle.isChecked(),
             translation_visible=self.translation_toggle.isChecked(),
-            translation_enabled=self.generate_toggle.isChecked(),
+            translation_enabled=self.translation_toggle.isChecked(),
         )
         self._visibility()
         self.settings_changed.emit(self.settings)
@@ -99,7 +117,6 @@ class CaptionOverlay(QWidget):
         for toggle, checked in [
             (self.transcript_toggle, settings.transcript_visible),
             (self.translation_toggle, settings.translation_visible),
-            (self.generate_toggle, settings.translation_enabled),
         ]:
             toggle.blockSignals(True)
             toggle.setChecked(checked)
@@ -125,5 +142,6 @@ class CaptionOverlay(QWidget):
 
     def closeEvent(self, event):
         # Closing hides the overlay; the running session is controlled by Stop.
+        self.pin_control.stop()
         self.hide()
         event.ignore()

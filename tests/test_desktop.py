@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -108,3 +109,53 @@ def test_platform_setup_preserves_offscreen_override(monkeypatch):
         qt_platform.ctypes, "CDLL", lambda *args, **kwargs: pytest.fail("library load")
     )
     assert qt_platform.configure_platform() == "offscreen"
+
+
+def native_background(monkeypatch, owns=False):
+    clipboard = SimpleNamespace(
+        ownsClipboard=lambda: owns,
+        text=lambda: "owned clipboard text",
+        setText=lambda text: pytest.fail("background Qt clipboard write"),
+    )
+    app = SimpleNamespace(
+        platformName=lambda: "wayland",
+        activeWindow=lambda: None,
+        clipboard=lambda: clipboard,
+    )
+    monkeypatch.setattr(desktop, "_qt_application", lambda: app)
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    monkeypatch.setattr(desktop.shutil, "which", lambda name: name)
+
+
+def test_background_wayland_copy_uses_nonpiped_helper_even_for_owned_clipboard(monkeypatch):
+    native_background(monkeypatch, owns=True)
+    calls = []
+    monkeypatch.setattr(
+        desktop.subprocess, "run", lambda command, **kwargs: calls.append((command, kwargs))
+    )
+    desktop.copy_text("日本語")
+    command, options = calls[0]
+    assert command[0] == "wl-copy"
+    assert options["input"] == "日本語".encode()
+    assert options["stdout"] == desktop.subprocess.DEVNULL
+    assert options["stderr"] == desktop.subprocess.DEVNULL
+    assert options["check"]
+
+
+def test_background_wayland_reads_other_app_through_helper(monkeypatch):
+    native_background(monkeypatch)
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        return SimpleNamespace(stdout="external clipboard text")
+
+    monkeypatch.setattr(desktop, "_run", run)
+    assert desktop.clipboard_text() == "external clipboard text"
+    assert calls == [["wl-paste", "--no-newline"]]
+
+
+def test_background_wayland_owned_clipboard_avoids_blocking_helper(monkeypatch):
+    native_background(monkeypatch, owns=True)
+    monkeypatch.setattr(desktop, "_run", lambda *args, **kwargs: pytest.fail("GUI deadlock"))
+    assert desktop.clipboard_text() == "owned clipboard text"

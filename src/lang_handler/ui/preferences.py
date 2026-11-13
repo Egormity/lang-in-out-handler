@@ -1,25 +1,14 @@
-"""Editable connection, model, audio, and shortcut preferences."""
+"""Connection and task settings, organized into focused tabs."""
 
 from dataclasses import replace
 
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import (
-    QCheckBox,
-    QDoubleSpinBox,
-    QFormLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QKeySequenceEdit,
-    QLineEdit,
-    QScrollArea,
-    QSpinBox,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QTabWidget, QVBoxLayout, QWidget
 
-from .audio_controls import AudioSourceCombo
-from .common import button, editable_combo, label, language_combo, language_value, title_block
+from . import preference_sections
+from .common import button, label, language_value, title_block
+from .sections import scrollable_body
 
 
 class PreferencesPage(QWidget):
@@ -32,45 +21,57 @@ class PreferencesPage(QWidget):
         super().__init__()
         self.settings = settings
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(28, 24, 28, 20)
-        outer.addWidget(
-            title_block("Preferences", "Your connection, models, and keyboard controls.")
-        )
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        body = QWidget()
-        layout = QVBoxLayout(body)
-        layout.setContentsMargins(0, 0, 12, 10)
-        layout.setSpacing(12)
-        scroll.setWidget(body)
-        outer.addWidget(scroll, 1)
-        _, form = self._group("OpenAI connection", layout)
+        outer.setContentsMargins(24, 24, 24, 20)
+        outer.setSpacing(16)
+        outer.addWidget(title_block("Preferences", "Connect OpenAI and make each tool your own."))
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.tabs.tabBar().setDrawBase(False)
+        self.tabs.setUsesScrollButtons(True)
+        self.tabs.addTab(self._connection(settings, api_key_present), "Connection")
+        self.models = {}
+        for builder, title in [
+            (preference_sections.recognition, "Recognition"),
+            (preference_sections.translation, "Translation / speech"),
+            (preference_sections.handwriting, "Handwriting"),
+            (preference_sections.shortcuts, "Shortcuts"),
+        ]:
+            self.tabs.addTab(builder(self, settings), title)
+        outer.addWidget(self.tabs, 1)
+        row = QHBoxLayout()
+        row.addWidget(label("Preferences are stored on this computer.", True), 1)
+        self.save_preferences = button("Save preferences", True)
+        self.save_preferences.clicked.connect(lambda: self.saved.emit(self.collect()))
+        row.addWidget(self.save_preferences)
+        outer.addLayout(row)
+        self.update_settings(settings)
+
+    def _connection(self, settings, api_key_present):
+        scroll, layout = scrollable_body()
+        layout.addWidget(label("Your API key connects every tool to your OpenAI account.", True))
+        form = preference_sections.group("OpenAI API key", layout)
         self.api_key = QLineEdit()
         self.api_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.api_key.setPlaceholderText("Enter a new API key to save or replace it")
+        self.api_key.setPlaceholderText("Paste a new API key")
         form.addRow("API key", self.api_key)
-        self.api_proxy_url = QLineEdit(settings.api_proxy_url)
-        self.api_proxy_url.setPlaceholderText("Use environment proxy (or direct if unset)")
-        self.api_proxy_url.setToolTip(
-            "Supports HTTP, HTTPS, and SOCKS proxy URLs. Leave empty to use the environment proxy, or connect directly when none is configured."
-        )
-        form.addRow("Proxy URL", self.api_proxy_url)
         actions = QHBoxLayout()
+        actions.setSpacing(8)
         save_key = button("Save key")
-        self.test_key_button = button("Test connection")
+        self.test_key_button = button("Test connection", True)
         self.refresh_models_button = button("Refresh models")
-        self.remove_key_button = button("Remove saved key")
+        self.remove_key_button = button("Remove key")
+        self.remove_key_button.setObjectName("quiet")
         self.remove_key_button.setEnabled(api_key_present)
         self.remove_key_button.clicked.connect(self._remove_key)
-        actions.addWidget(save_key)
-        actions.addWidget(self.test_key_button)
-        actions.addWidget(self.refresh_models_button)
-        actions.addWidget(self.remove_key_button)
+        for item in (save_key, self.test_key_button, self.refresh_models_button):
+            actions.addWidget(item)
         form.addRow(actions)
-        self.key_status = label(
-            "API key saved." if api_key_present else "Add an API key to get started.", True
-        )
+        self.key_status = label("API key saved." if api_key_present else "No API key saved.", True)
         form.addRow(self.key_status)
+        remove_row = QHBoxLayout()
+        remove_row.addStretch()
+        remove_row.addWidget(self.remove_key_button)
+        form.addRow(remove_row)
         save_key.clicked.connect(self._save_key)
         self.test_key_button.clicked.connect(
             lambda: self.key_test_requested.emit(self.api_key.text().strip())
@@ -79,119 +80,21 @@ class PreferencesPage(QWidget):
             lambda: self.models_requested.emit(self.api_key.text().strip())
         )
         self.api_key.textChanged.connect(self._update_key_actions)
-        _, form = self._group("Models", layout)
-        self.models = {}
-        for key, title in [
-            ("input_model", "Voice input"),
-            ("output_model", "Output captions"),
-            ("translation_model", "Translation"),
-            ("tts_model", "Text to speech"),
-            ("drawing_model", "Handwriting"),
-        ]:
-            widget = editable_combo([], getattr(settings, key))
-            widget.setToolTip("Choose a model from your account or enter its model ID.")
-            self.models[key] = widget
-            form.addRow(title, widget)
-        _, form = self._group("Languages & audio", layout)
-        self.input_language = language_combo(settings.input_language)
-        self.output_language = language_combo(settings.output_language)
-        self.target_language = editable_combo(
-            ["English", "Russian", "Japanese", "Spanish", "French", "German"],
-            settings.target_language,
+        form = preference_sections.group("Network", layout)
+        self.api_proxy_url = QLineEdit(settings.api_proxy_url)
+        self.api_proxy_url.setPlaceholderText("Use environment proxy (or direct if unset)")
+        self.api_proxy_url.setToolTip(
+            "Supports HTTP, HTTPS, and SOCKS proxy URLs. Leave empty to use the environment proxy, or connect directly when none is configured."
         )
-        self.voice = editable_combo(
-            [
-                "coral",
-                "alloy",
-                "ash",
-                "ballad",
-                "echo",
-                "fable",
-                "nova",
-                "onyx",
-                "sage",
-                "shimmer",
-                "verse",
-                "marin",
-                "cedar",
-            ],
-            settings.voice,
-        )
-        form.addRow("Input language", self.input_language)
-        form.addRow("Output language", self.output_language)
-        form.addRow("Translate into", self.target_language)
-        form.addRow("Speech voice", self.voice)
-        self.chunk_seconds = QDoubleSpinBox()
-        self.chunk_seconds.setRange(2, 30)
-        self.chunk_seconds.setSingleStep(0.5)
-        self.chunk_seconds.setSuffix(" seconds")
-        self.chunk_seconds.setValue(settings.chunk_seconds)
-        form.addRow("Chunk duration", self.chunk_seconds)
-        self.microphone_source = AudioSourceCombo(False, settings.microphone_source)
-        self.output_source = AudioSourceCombo(True, settings.output_source)
-        form.addRow("Microphone source", self.microphone_source)
-        form.addRow("Output monitor", self.output_source)
+        form.addRow("Proxy URL", self.api_proxy_url)
         form.addRow(
             label(
-                "Default sources follow your system devices. You can also enter an audio source name.",
+                "Test connection checks the key and proxy entered here. API usage is billed to your OpenAI account.",
                 True,
             )
         )
-        _, form = self._group("Floating captions", layout)
-        self.font_size = QSpinBox()
-        self.font_size.setRange(12, 56)
-        self.font_size.setSuffix(" px")
-        self.font_size.setValue(settings.font_size)
-        form.addRow("Text size", self.font_size)
-        self.opacity = QDoubleSpinBox()
-        self.opacity.setRange(0.4, 1)
-        self.opacity.setSingleStep(0.05)
-        self.opacity.setValue(settings.overlay_opacity)
-        form.addRow("Opacity", self.opacity)
-        _, form = self._group("Handwriting", layout)
-        self.drawing_auto_send = QCheckBox("Recognize automatically after drawing")
-        self.drawing_auto_send.setChecked(settings.drawing_auto_send)
-        self.drawing_delay = QDoubleSpinBox()
-        self.drawing_delay.setRange(0.2, 10)
-        self.drawing_delay.setSingleStep(0.1)
-        self.drawing_delay.setSuffix(" seconds")
-        self.drawing_delay.setValue(settings.drawing_debounce_ms / 1000)
-        self.drawing_delay.setEnabled(settings.drawing_auto_send)
-        self.drawing_auto_send.toggled.connect(self.drawing_delay.setEnabled)
-        form.addRow(self.drawing_auto_send)
-        form.addRow("Wait after drawing", self.drawing_delay)
-        _, form = self._group("Global shortcuts", layout)
-        self.shortcuts = {}
-        for mode, title in [
-            ("input", "Toggle voice input"),
-            ("output", "Toggle output captions"),
-            ("translate", "Translate clipboard"),
-            ("tts", "Read clipboard aloud"),
-        ]:
-            widget = QKeySequenceEdit(QKeySequence(settings.shortcuts.get(mode, "")))
-            widget.setMaximumSequenceLength(1)
-            self.shortcuts[mode] = widget
-            form.addRow(title, widget)
-        form.addRow(
-            label("Meta is the Super / Windows key. Leave a shortcut empty to disable it.", True)
-        )
         layout.addStretch()
-        save = button("Save preferences", True)
-        save.clicked.connect(lambda: self.saved.emit(self.collect()))
-        row = QHBoxLayout()
-        row.addStretch()
-        row.addWidget(save)
-        outer.addLayout(row)
-
-    @staticmethod
-    def _group(title, parent_layout):
-        group = QGroupBox(title.replace("&", "&&"))
-        form = QFormLayout(group)
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        form.setHorizontalSpacing(20)
-        form.setVerticalSpacing(12)
-        parent_layout.addWidget(group)
-        return group, form
+        return scroll
 
     def _save_key(self):
         value = self.api_key.text().strip()
@@ -292,6 +195,6 @@ class PreferencesPage(QWidget):
         for mode, widget in self.shortcuts.items():
             widget.setKeySequence(QKeySequence(settings.shortcuts.get(mode, "")))
 
-    def set_sources(self, sources: list[dict]):
+    def set_sources(self, sources):
         self.microphone_source.set_sources(sources)
         self.output_source.set_sources(sources)

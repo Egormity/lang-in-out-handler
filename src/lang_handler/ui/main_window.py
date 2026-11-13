@@ -21,7 +21,7 @@ from .common import button, label
 from .drawing_page import DrawingPage
 from .history import HistoryPage
 from .preferences import PreferencesPage
-from .text_pages import SpeechPage, TranslatePage
+from .text_pages import TranslatePage
 from .theme import STYLE
 
 
@@ -59,16 +59,16 @@ class MainWindow(QMainWindow):
         content.setSpacing(0)
         sidebar = QWidget()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(205)
+        sidebar.setFixedWidth(188)
         nav = QVBoxLayout(sidebar)
-        nav.setContentsMargins(18, 28, 18, 18)
+        nav.setContentsMargins(14, 24, 14, 16)
         brand = QLabel("Lang In/Out")
         brand.setObjectName("brand")
         nav.addWidget(brand)
-        eyebrow = QLabel("LANGUAGE WORKBENCH")
+        eyebrow = QLabel("YOUR LANGUAGE TOOLS")
         eyebrow.setObjectName("eyebrow")
         nav.addWidget(eyebrow)
-        nav.addSpacing(29)
+        nav.addSpacing(24)
         self.navigation = QButtonGroup(self)
         self.navigation.setExclusive(True)
         self.stack = QStackedWidget()
@@ -76,7 +76,6 @@ class MainWindow(QMainWindow):
             "input": CapturePage("input", settings),
             "output": CapturePage("output", settings),
             "translate": TranslatePage(settings),
-            "tts": SpeechPage(settings),
             "drawing": DrawingPage(settings),
             "history": HistoryPage(),
             "preferences": PreferencesPage(settings, api_key_present),
@@ -86,7 +85,6 @@ class MainWindow(QMainWindow):
             "input": "Voice input",
             "output": "Live captions",
             "translate": "Translate",
-            "tts": "Text to speech",
             "drawing": "Handwriting",
             "history": "History",
             "preferences": "Preferences",
@@ -131,11 +129,12 @@ class MainWindow(QMainWindow):
             page.file_requested.connect(
                 lambda path, chunked, key=mode: self._file(key, path, chunked)
             )
+            page.options_changed.connect(self.sync_mode_settings)
         self.pages["output"].overlay_requested.connect(self.overlay_requested)
         self.pages["translate"].requested.connect(self._translate)
-        self.pages["tts"].requested.connect(self._speak)
-        self.pages["tts"].stop_requested.connect(self.speech_stop_requested)
-        self.pages["tts"].replay_requested.connect(self.speech_replay_requested)
+        self.pages["translate"].speech_requested.connect(self._speak)
+        self.pages["translate"].stop_requested.connect(self.speech_stop_requested)
+        self.pages["translate"].replay_requested.connect(self.speech_replay_requested)
         self.pages["drawing"].requested.connect(self._drawing)
         self.pages["drawing"].cancel_requested.connect(self.drawing_cancel_requested)
         self.pages["drawing"].options_changed.connect(self.sync_mode_settings)
@@ -154,13 +153,15 @@ class MainWindow(QMainWindow):
             input_instructions=self.pages["input"].instructions.toPlainText(),
             output_instructions=self.pages["output"].instructions.toPlainText(),
             translation_instructions=self.pages["translate"].instructions.toPlainText(),
-            tts_instructions=self.pages["tts"].instructions.toPlainText(),
+            tts_instructions=self.pages["translate"].tts_instructions.toPlainText(),
+            target_language=self.pages["translate"].target.currentText().strip() or "English",
             drawing_instructions=self.pages["drawing"].instructions.toPlainText(),
             drawing_auto_send=self.pages["drawing"].auto_send.isChecked(),
             input_chunked=self.pages["input"].chunked(),
             output_chunked=self.pages["output"].chunked(),
             auto_paste=self.pages["input"].option.isChecked(),
             translation_enabled=self.pages["output"].option.isChecked(),
+            translation_visible=self.pages["output"].option.isChecked(),
         )
         self.pages["preferences"].settings = self.settings
         self.settings_saved.emit(self.settings)
@@ -202,6 +203,7 @@ class MainWindow(QMainWindow):
                     "output_chunked",
                     "auto_paste",
                     "translation_enabled",
+                    "translation_visible",
                 )
             },
         )
@@ -209,6 +211,7 @@ class MainWindow(QMainWindow):
         self.settings_saved.emit(settings)
 
     def show_page(self, mode: str):
+        mode = "translate" if mode == "tts" else mode
         if mode not in self.pages:
             return
         self.stack.setCurrentWidget(self.pages[mode])
@@ -241,7 +244,11 @@ class MainWindow(QMainWindow):
         self.pages["translate"].result.text.setPlainText(text)
 
     def set_speech(self, path: str):
-        self.pages["tts"].set_audio(path)
+        self.pages["translate"].set_audio(path)
+
+    def set_source_text(self, mode: str, text: str):
+        if mode in ("translate", "tts"):
+            self.pages["translate"].source.text.setPlainText(text)
 
     def set_drawing_result(self, text: str, revision: int):
         self.pages["drawing"].set_result(text, revision)
@@ -290,11 +297,6 @@ class MainWindow(QMainWindow):
         self.settings = settings
         self.pages["input"].apply_settings(settings)
         self.pages["output"].apply_settings(settings)
-        self.pages["translate"].instructions.setPlainText(settings.translation_instructions)
-        self.pages["translate"].target.setText(
-            f"Target language: {settings.target_language} · change in Preferences"
-        )
-        self.pages["tts"].instructions.setPlainText(settings.tts_instructions)
-        self.pages["tts"].voice.setText(f"Voice: {settings.voice} · change in Preferences")
+        self.pages["translate"].apply_settings(settings)
         self.pages["drawing"].update_settings(settings)
         self.pages["preferences"].update_settings(settings)

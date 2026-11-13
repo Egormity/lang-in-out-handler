@@ -12,12 +12,27 @@ def _run(command: list[str], **kwargs):
     return subprocess.run(command, check=True, capture_output=True, timeout=5, **kwargs)
 
 
-def copy_text(text: str):
+def _qt_application():
     from PySide6.QtCore import QThread
     from PySide6.QtWidgets import QApplication
 
     application = QApplication.instance()
     if application is not None and QThread.currentThread() == application.thread():
+        return application
+    return None
+
+
+def _background_wayland(application) -> bool:
+    return bool(
+        application is not None
+        and application.platformName().startswith("wayland")
+        and application.activeWindow() is None
+    )
+
+
+def copy_text(text: str):
+    application = _qt_application()
+    if application is not None and not _background_wayland(application):
         application.clipboard().setText(text)
     elif os.environ.get("WAYLAND_DISPLAY") and shutil.which("wl-copy"):
         # Clipboard helpers fork a long-lived selection owner. Do not leave
@@ -46,11 +61,12 @@ def copy_text(text: str):
 
 
 def clipboard_text() -> str:
-    from PySide6.QtCore import QThread
-    from PySide6.QtWidgets import QApplication
-
-    application = QApplication.instance()
-    if application is not None and QThread.currentThread() == application.thread():
+    application = _qt_application()
+    if application is not None and (
+        not _background_wayland(application) or application.clipboard().ownsClipboard()
+    ):
+        # Reading our own Qt selection through a blocking wl-paste would wait
+        # for this GUI thread to serve the request. Read it directly instead.
         return application.clipboard().text()
     if os.environ.get("WAYLAND_DISPLAY") and shutil.which("wl-paste"):
         return _run(["wl-paste", "--no-newline"], text=True).stdout

@@ -1,5 +1,7 @@
 """Handwriting UI behavior: no network, audio, or private images."""
 
+from copy import deepcopy
+
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QImage
 from PySide6.QtTest import QSignalSpy
@@ -13,7 +15,9 @@ def drawing_window(qtbot, **settings):
     qtbot.addWidget(window)
     window.show_page("drawing")
     window.show()
-    return window, window.pages["drawing"]
+    page = window.pages["drawing"]
+    qtbot.addWidget(page.floating)
+    return window, page
 
 
 def stroke(qtbot, canvas, offset=0):
@@ -117,3 +121,129 @@ def test_drawing_controls_never_overlap_canvas_at_small_window_sizes(qtbot):
         page.scroll.ensureWidgetVisible(page.result)
         qtbot.wait(10)
         assert page.result.isVisible()
+
+
+def test_float_and_dock_keep_one_canvas_revision_and_recognized_text(qtbot):
+    window, page = drawing_window(qtbot, drawing_auto_send=False)
+    stroke(qtbot, page.canvas)
+    original_canvas = page.canvas
+    revision = window.drawing_revision()
+    strokes = deepcopy(page.canvas.strokes)
+    window.set_drawing_result("日本語", revision)
+    changed = QSignalSpy(page.canvas.changed)
+    page.float_button.click()
+    qtbot.waitUntil(page.floating.isVisible)
+    assert page.is_floating
+    assert page.floating.scroll.widget() is page.workspace
+    assert page.canvas is original_canvas
+    assert page.canvas.revision == revision
+    assert page.canvas.strokes == strokes
+    assert page.result.text.toPlainText() == "日本語"
+    assert page.floating.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    assert not page.floating.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+    page.floating.dock_button.click()
+    assert not page.floating.isVisible()
+    assert not page.is_floating
+    assert page.floating.scroll.widget() is None
+    assert page.canvas is original_canvas
+    assert page.canvas.revision == revision
+    assert changed.count() == 0
+    assert page.result.text.toPlainText() == "日本語"
+
+
+def test_floating_pin_and_close_preserve_canvas(qtbot):
+    _, page = drawing_window(qtbot, drawing_auto_send=False)
+    stroke(qtbot, page.canvas)
+    revision = page.canvas.revision
+    page.show_floating()
+    page.floating.pin.setChecked(False)
+    assert not page.floating.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    assert page.floating.isVisible()
+    page.floating.pin.setChecked(True)
+    assert page.floating.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    page.floating.close()
+    assert not page.is_floating
+    assert page.workspace.isVisible()
+    assert not page.canvas.is_blank
+    assert page.canvas.revision == revision
+
+
+def test_floating_hide_restore_and_manual_recognition_share_state(qtbot):
+    window, page = drawing_window(qtbot, drawing_auto_send=False)
+    requests = QSignalSpy(window.drawing_requested)
+    page.show_floating()
+    stroke(qtbot, page.canvas)
+    revision = page.canvas.revision
+    page.floating.hide_button.click()
+    assert page.is_floating
+    assert not page.floating.isVisible()
+    page.show_floating()
+    assert page.canvas.revision == revision
+    page.send_button.click()
+    assert requests.count() == 1
+    assert requests.at(0)[1] == revision
+    assert page.floating.isVisible()
+
+
+def test_floating_editor_keeps_canvas_large_and_instructions_collapsed(qtbot):
+    _, page = drawing_window(qtbot, drawing_auto_send=False)
+    assert not page.instructions.isVisible()
+    page.show_floating()
+    qtbot.wait(20)
+    assert page.floating.size().width() == 750
+    assert page.floating.size().height() == 600
+    assert page.floating.scroll.verticalScrollBar().maximum() == 0
+    for width, height in ((640, 660), (480, 480), (760, 820)):
+        page.floating.resize(width, height)
+        qtbot.wait(20)
+        assert page.canvas.height() >= 240
+        assert page.canvas.geometry().bottom() < page.auto_send.geometry().top()
+        assert page.canvas.geometry().bottom() < page.send_button.geometry().top()
+        assert page.result.geometry().top() > page.send_button.geometry().bottom()
+    page.advanced_toggle.setChecked(True)
+    assert page.instructions.isVisible()
+    page.dock_workspace()
+    assert page.instructions.isVisible()
+
+
+def test_shutdown_hides_floating_host_and_stops_pending_recognition(qtbot):
+    window, page = drawing_window(qtbot, drawing_auto_send=True, drawing_debounce_ms=200)
+    requests = QSignalSpy(window.drawing_requested)
+    page.show_floating()
+    stroke(qtbot, page.canvas)
+    assert page.timer.isActive()
+    page.shutdown()
+    assert not page.floating.isVisible()
+    assert not page.is_floating
+    assert not page.timer.isActive()
+    qtbot.wait(250)
+    assert requests.count() == 0
+
+
+def test_floating_default_size_keeps_result_visible_at_high_dpi():
+    import os
+    import subprocess
+    import sys
+
+    script = """
+from PySide6.QtWidgets import QApplication
+from lang_handler.ui.drawing_page import DrawingPage
+from lang_handler.settings import Settings
+app = QApplication([])
+page = DrawingPage(Settings(drawing_auto_send=False))
+page.show_floating()
+app.processEvents()
+assert page.canvas.height() >= 240
+assert page.result.isVisible()
+assert page.floating.scroll.verticalScrollBar().maximum() == 0
+page.shutdown()
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        env={**os.environ, "QT_QPA_PLATFORM": "offscreen", "QT_SCALE_FACTOR": "2"},
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr

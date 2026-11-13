@@ -1,105 +1,96 @@
-"""Translation and text-to-speech pages."""
-
-import shutil
-from pathlib import Path
+"""Translation with speech playback for the original and translated text."""
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import (
-    QFileDialog,
-    QHBoxLayout,
-    QPlainTextEdit,
-    QSplitter,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QHBoxLayout, QPlainTextEdit, QSplitter, QVBoxLayout, QWidget
 
-from .common import TextPane, button, label, title_block
+from .common import TextPane, button, editable_combo, label, title_block
+from .sections import ExpandableSection, tool_layout
+from .speech_controls import SpeechControls
 
 
 class TranslatePage(QWidget):
     requested = Signal(str)
-
-    def __init__(self, settings):
-        super().__init__()
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 24, 28, 20)
-        layout.setSpacing(14)
-        layout.addWidget(
-            title_block("Translate", "Carry the meaning across languages, in your own style.")
-        )
-        self.target = label(f"Target language: {settings.target_language} · change in Preferences")
-        layout.addWidget(self.target)
-        layout.addWidget(label("Instructions"))
-        self.instructions = QPlainTextEdit(settings.translation_instructions)
-        self.instructions.setMaximumHeight(90)
-        layout.addWidget(self.instructions)
-        split = QSplitter()
-        self.source = TextPane("Original text", "Paste or type the text to translate…", False)
-        self.result = TextPane("Translation", "Your translation will appear here.")
-        split.addWidget(self.source)
-        split.addWidget(self.result)
-        layout.addWidget(split, 1)
-        row = QHBoxLayout()
-        row.addStretch()
-        self.run = button("Translate text", True)
-        self.run.clicked.connect(lambda: self.requested.emit(self.source.text.toPlainText()))
-        row.addWidget(self.run)
-        layout.addLayout(row)
-
-
-class SpeechPage(QWidget):
-    requested = Signal(str)
+    speech_requested = Signal(str)
     stop_requested = Signal()
     replay_requested = Signal(str)
 
     def __init__(self, settings):
         super().__init__()
-        self.path = ""
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 24, 28, 20)
-        layout.setSpacing(14)
-        layout.addWidget(
-            title_block("Text to speech", "Listen to text with an AI-generated voice.")
+        layout = tool_layout(self)
+        layout.addWidget(title_block("Translate", "Translate text, then listen to either version."))
+        actions = QHBoxLayout()
+        actions.addWidget(label("Translate into"))
+        self.target = editable_combo(
+            ["English", "Japanese", "Russian", "Spanish", "French", "German"],
+            settings.target_language,
         )
-        self.voice = label(f"Voice: {settings.voice} · change in Preferences")
-        layout.addWidget(self.voice)
-        layout.addWidget(label("Voice instructions"))
-        self.instructions = QPlainTextEdit(settings.tts_instructions)
-        self.instructions.setPlaceholderText("Describe pace, emotion, accent, or speaking style…")
-        self.instructions.setMaximumHeight(90)
-        layout.addWidget(self.instructions)
-        self.source = TextPane("Text to read", "Paste or type the text you want to hear…", False)
-        layout.addWidget(self.source, 1)
-        self.file_label = label("No audio generated yet.", True)
-        layout.addWidget(self.file_label)
-        row = QHBoxLayout()
-        self.save = button("Save audio…")
-        self.save.setEnabled(False)
-        self.save.clicked.connect(self._save)
-        self.play = button("Play again")
-        self.play.setEnabled(False)
-        self.play.clicked.connect(lambda: self.replay_requested.emit(self.path))
-        stop = button("Stop playback")
-        stop.clicked.connect(self.stop_requested)
-        row.addWidget(self.save)
-        row.addWidget(self.play)
-        row.addWidget(stop)
-        row.addStretch()
-        self.run = button("Generate & play", True)
+        self.target.setMinimumWidth(140)
+        actions.addWidget(self.target)
+        actions.addStretch()
+        self.run = button("Translate text", True)
         self.run.clicked.connect(lambda: self.requested.emit(self.source.text.toPlainText()))
-        row.addWidget(self.run)
-        layout.addLayout(row)
-
-    def set_audio(self, path: str):
-        self.path = path
-        self.file_label.setText(f"Ready: {Path(path).name}")
-        self.file_label.setToolTip(path)
-        self.save.setEnabled(True)
-        self.play.setEnabled(True)
-
-    def _save(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save generated speech", "speech.wav", "WAV audio (*.wav)"
+        actions.addWidget(self.run)
+        layout.addLayout(actions)
+        self.advanced = ExpandableSection("Translation and voice options")
+        options = QHBoxLayout()
+        translation_options = QVBoxLayout()
+        translation_options.addWidget(label("Translation instructions", True))
+        self.instructions = QPlainTextEdit(settings.translation_instructions)
+        self.instructions.setAccessibleName("Translation instructions")
+        self.instructions.setFixedHeight(82)
+        translation_options.addWidget(self.instructions)
+        speech_options = QVBoxLayout()
+        speech_options.addWidget(label("Voice instructions", True))
+        self.tts_instructions = QPlainTextEdit(settings.tts_instructions)
+        self.tts_instructions.setAccessibleName("Voice instructions")
+        self.tts_instructions.setFixedHeight(82)
+        speech_options.addWidget(self.tts_instructions)
+        options.addLayout(translation_options, 1)
+        options.addLayout(speech_options, 1)
+        self.advanced.body_layout.addLayout(options)
+        self.model_summary = label("", True)
+        self.advanced.body_layout.addWidget(self.model_summary)
+        layout.addWidget(self.advanced)
+        self.splitter = QSplitter()
+        self.splitter.setHandleWidth(12)
+        self.splitter.setChildrenCollapsible(False)
+        self.source = TextPane("Original", "Type or paste text to translate or read aloud…", False)
+        self.result = TextPane("Translation", "Your translation appears here.", False)
+        self.speak_original = self.source.add_action("Speak original")
+        self.speak_translation = self.result.add_action("Speak translation")
+        self.speak_original.clicked.connect(
+            lambda: self.speech_requested.emit(self.source.text.toPlainText())
         )
-        if path and Path(path).resolve() != Path(self.path).resolve():
-            shutil.copy2(self.path, path)
+        self.speak_translation.clicked.connect(
+            lambda: self.speech_requested.emit(self.result.text.toPlainText())
+        )
+        self.speak_original.setEnabled(False)
+        self.speak_translation.setEnabled(False)
+        self.source.text.textChanged.connect(
+            lambda: self.speak_original.setEnabled(bool(self.source.text.toPlainText().strip()))
+        )
+        self.result.text.textChanged.connect(
+            lambda: self.speak_translation.setEnabled(bool(self.result.text.toPlainText().strip()))
+        )
+        self.splitter.addWidget(self.source)
+        self.splitter.addWidget(self.result)
+        self.splitter.setSizes([450, 450])
+        layout.addWidget(self.splitter, 1)
+        self.speech_controls = SpeechControls()
+        self.speech_controls.stop_requested.connect(self.stop_requested)
+        self.speech_controls.replay_requested.connect(self.replay_requested)
+        self.play = self.speech_controls.play
+        self.save = self.speech_controls.save
+        layout.addWidget(self.speech_controls)
+        self.apply_settings(settings)
+
+    def set_audio(self, path):
+        self.speech_controls.set_audio(path)
+
+    def apply_settings(self, settings):
+        self.instructions.setPlainText(settings.translation_instructions)
+        self.tts_instructions.setPlainText(settings.tts_instructions)
+        self.target.setCurrentText(settings.target_language)
+        self.model_summary.setText(
+            f"Translation: {settings.translation_model}   ·   Voice: {settings.voice}   ·   Models in Preferences"
+        )

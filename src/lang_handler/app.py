@@ -8,7 +8,7 @@ from pathlib import Path
 
 def main():
     parser = argparse.ArgumentParser(description="Lang In/Out — OpenAI language tools for Linux")
-    parser.add_argument("--action", choices=["show", "input", "output", "translate", "tts", "quit"])
+    parser.add_argument("--action", choices=["show", "input", "output", "translate", "tts", "drawing", "quit"])
     parser.add_argument("--no-shortcuts", action="store_true", help="Do not register desktop shortcuts")
     parser.add_argument("--version", action="store_true")
     args = parser.parse_args()
@@ -17,7 +17,7 @@ def main():
         print(__version__)
         return 0
 
-    # GNOME Wayland does not honor native keep-above requests. XWayland does.
+    # Native Wayland preserves tablet input; pinning is handled by the window host.
     # Respect explicit platform selection (including offscreen UI tests).
     from .qt_platform import configure_platform
     configure_platform()
@@ -36,6 +36,7 @@ def main():
 
     application = QApplication([sys.argv[0]])
     application.setApplicationName("lang-in-out")
+    application.setDesktopFileName("lang-in-out")
     application.setApplicationDisplayName("Lang In/Out")
     application.setOrganizationName("Egormity")
     instance = Instance(application)
@@ -70,6 +71,7 @@ def main():
                        ("Translate clipboard", "translate"), ("Speak clipboard", "tts")]:
         menu.addAction(name, lambda m=mode: controller.action(m))
     menu.addAction("Show captions", controller.show_overlay)
+    menu.addAction("Floating handwriting", lambda: controller.action("drawing"))
     menu.addSeparator()
     menu.addAction("Quit", application.quit)
     tray.setContextMenu(menu)

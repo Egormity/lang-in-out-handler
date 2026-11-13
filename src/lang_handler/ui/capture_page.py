@@ -1,4 +1,4 @@
-"""Microphone dictation and system audio capture controls."""
+"""Focused microphone and desktop-audio controls."""
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
@@ -8,12 +8,12 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QPlainTextEdit,
     QSplitter,
-    QVBoxLayout,
     QWidget,
 )
 
 from .audio_controls import AudioLevel
 from .common import TextPane, button, label, title_block
+from .sections import ExpandableSection, tool_layout
 
 
 class CapturePage(QWidget):
@@ -21,79 +21,97 @@ class CapturePage(QWidget):
     stop_requested = Signal()
     file_requested = Signal(str, bool)
     overlay_requested = Signal()
+    options_changed = Signal()
 
     def __init__(self, mode: str, settings):
         super().__init__()
         self.mode = mode
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 24, 28, 20)
-        layout.setSpacing(14)
         is_input = mode == "input"
-        layout.addWidget(
+        layout = tool_layout(self)
+        header = QHBoxLayout()
+        header.addWidget(
             title_block(
                 "Voice input" if is_input else "Live captions",
-                "Speak, transcribe, and send text to your active app."
+                "Turn your voice into text, wherever you work."
                 if is_input
-                else "Read the audio playing on your computer, with translation alongside.",
-            )
+                else "Follow the audio playing on your computer.",
+            ),
+            1,
         )
-        row = QHBoxLayout()
-        self.capture_type = QComboBox()
-        self.capture_type.addItem("One recording · transcribe on stop", False)
-        self.capture_type.addItem("Continuous · transcribe in chunks", True)
-        self.capture_type.setCurrentIndex(int(getattr(settings, f"{mode}_chunked")))
-        row.addWidget(self.capture_type, 1)
-        self.start_button = button("Start microphone" if is_input else "Start captions", True)
+        if not is_input:
+            self.show_overlay = button("Floating window")
+            self.show_overlay.clicked.connect(self.overlay_requested)
+            header.addWidget(self.show_overlay)
+        layout.addLayout(header)
+        actions = QHBoxLayout()
+        self.start_button = button("Start recording" if is_input else "Start captions", True)
         self.stop_button = button("Stop")
         self.stop_button.setEnabled(False)
-        row.addWidget(self.start_button)
-        row.addWidget(self.stop_button)
-        layout.addLayout(row)
-        options = QHBoxLayout()
-        self.option = QCheckBox(
-            "Paste transcript into active app" if is_input else "Translate captions"
+        actions.addWidget(self.start_button)
+        actions.addWidget(self.stop_button)
+        actions.addStretch()
+        self.capture_type = QComboBox()
+        self.capture_type.addItem("One recording", False)
+        self.capture_type.addItem("Continuous chunks", True)
+        self.capture_type.setToolTip(
+            "One recording transcribes when you stop. Continuous mode transcribes each audio chunk."
         )
-        self.option.setChecked(settings.auto_paste if is_input else settings.translation_enabled)
+        self.capture_type.setCurrentIndex(int(getattr(settings, f"{mode}_chunked")))
+        actions.addWidget(self.capture_type)
+        self.import_button = button("Open audio…")
+        actions.addWidget(self.import_button)
+        layout.addLayout(actions)
+        options = QHBoxLayout()
+        self.option = QCheckBox("Paste into active app" if is_input else "Show translation")
+        self.option.setChecked(settings.auto_paste if is_input else settings.translation_visible)
         options.addWidget(self.option)
         options.addStretch()
-        self.import_button = button("Open audio file…")
-        options.addWidget(self.import_button)
-        if not is_input:
-            show = button("Show floating captions")
-            show.clicked.connect(self.overlay_requested)
-            options.addWidget(show)
+        self.model_label = label(getattr(settings, f"{mode}_model"), True)
+        options.addWidget(self.model_label)
         layout.addLayout(options)
         self.level = AudioLevel()
         layout.addWidget(self.level)
-        layout.addWidget(label("Instructions / recognition context"))
+        self.advanced = ExpandableSection("Recognition options")
+        self.advanced.body_layout.addWidget(label("Instructions / vocabulary", True))
         self.instructions = QPlainTextEdit(getattr(settings, f"{mode}_instructions"))
+        self.instructions.setAccessibleName("Recognition instructions")
         self.instructions.setPlaceholderText(
-            "Names, vocabulary, or context to help the model recognize speech…"
+            "Names, vocabulary, or context to recognize accurately…"
         )
-        self.instructions.setMaximumHeight(86)
-        layout.addWidget(self.instructions)
-        self.results = TextPane("Transcript", "Your words will appear here.")
+        self.instructions.setFixedHeight(75)
+        self.advanced.body_layout.addWidget(self.instructions)
+        self.advanced.body_layout.addWidget(
+            label("Choose models, languages, devices, and chunk duration in Preferences.", True)
+        )
+        layout.addWidget(self.advanced)
+        self.results = TextPane("Transcript", "Your transcript appears here.")
         self.translations = None
         if is_input:
             layout.addWidget(self.results, 1)
         else:
-            split = QSplitter()
-            split.addWidget(self.results)
-            self.translations = TextPane("Translation", "Translations appear when enabled.")
-            split.addWidget(self.translations)
-            split.setSizes([450, 450])
-            layout.addWidget(split, 1)
-        clear = button("Clear view")
-        clear.clicked.connect(self.clear)
+            self.splitter = QSplitter()
+            self.splitter.setHandleWidth(12)
+            self.splitter.addWidget(self.results)
+            self.translations = TextPane("Translation", "Translated captions appear here.")
+            self.splitter.addWidget(self.translations)
+            self.splitter.setSizes([450, 450])
+            self.translations.setVisible(settings.translation_visible)
+            layout.addWidget(self.splitter, 1)
         footer = QHBoxLayout()
-        footer.addWidget(
-            label("Audio is sent to OpenAI when you start or import a recording.", True), 1
-        )
-        footer.addWidget(clear)
+        footer.addWidget(label("Audio is processed by OpenAI.", True), 1)
+        self.clear_button = button("Clear view")
+        self.clear_button.clicked.connect(self.clear)
+        footer.addWidget(self.clear_button)
         layout.addLayout(footer)
         self.start_button.clicked.connect(lambda: self.capture_requested.emit(self.chunked()))
         self.stop_button.clicked.connect(self.stop_requested)
         self.import_button.clicked.connect(self._import)
+        self.option.toggled.connect(self._option_changed)
+
+    def _option_changed(self, checked):
+        if self.translations:
+            self.translations.setVisible(checked)
+        self.options_changed.emit()
 
     def chunked(self) -> bool:
         return bool(self.capture_type.currentData())
@@ -124,6 +142,10 @@ class CapturePage(QWidget):
     def apply_settings(self, settings):
         self.instructions.setPlainText(getattr(settings, f"{self.mode}_instructions"))
         self.capture_type.setCurrentIndex(int(getattr(settings, f"{self.mode}_chunked")))
-        self.option.setChecked(
-            settings.auto_paste if self.mode == "input" else settings.translation_enabled
-        )
+        visible = settings.auto_paste if self.mode == "input" else settings.translation_visible
+        self.option.blockSignals(True)
+        self.option.setChecked(visible)
+        self.option.blockSignals(False)
+        self.model_label.setText(getattr(settings, f"{self.mode}_model"))
+        if self.translations:
+            self.translations.setVisible(visible)

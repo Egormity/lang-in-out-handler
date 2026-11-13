@@ -4,8 +4,10 @@ from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
+from .tablet_input import TabletInputMixin
 
-class DrawingCanvas(QWidget):
+
+class DrawingCanvas(TabletInputMixin, QWidget):
     changed = Signal(int)
 
     def __init__(self):
@@ -14,6 +16,7 @@ class DrawingCanvas(QWidget):
         self.revision = 0
         self.is_drawing = False
         self.pen_width = 4
+        self.initialize_input()
         self.setMinimumSize(350, 210)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setCursor(Qt.CursorShape.CrossCursor)
@@ -37,11 +40,13 @@ class DrawingCanvas(QWidget):
 
     def begin_stroke(self, position):
         self.is_drawing = True
+        self._last_position = QPointF(position)
         self.strokes.append((self.pen_width, [self._point(position)]))
         self._changed()
 
     def extend_stroke(self, position):
         if self.is_drawing and self.strokes:
+            self._last_position = QPointF(position)
             self.strokes[-1][1].append(self._point(position))
             self._changed()
 
@@ -49,42 +54,20 @@ class DrawingCanvas(QWidget):
         if self.is_drawing:
             self.extend_stroke(position)
             self.is_drawing = False
+            self._stroke_source = None
             self._changed()
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.begin_stroke(event.position())
-            event.accept()
-
-    def mouseMoveEvent(self, event):
-        if self.is_drawing:
-            self.extend_stroke(event.position())
-            event.accept()
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.end_stroke(event.position())
-            event.accept()
-
-    def tabletEvent(self, event):
-        kind = event.type()
-        if kind == event.Type.TabletPress:
-            self.begin_stroke(event.position())
-        elif kind == event.Type.TabletMove:
-            self.extend_stroke(event.position())
-        elif kind == event.Type.TabletRelease:
-            self.end_stroke(event.position())
-        event.accept()
 
     def undo(self):
         if self.strokes:
             self.strokes.pop()
             self.is_drawing = False
+            self._stroke_source = None
             self._changed()
 
     def clear(self):
         self.strokes.clear()
         self.is_drawing = False
+        self._stroke_source = None
         self._changed()
 
     def _paint_strokes(self, painter, width, height):

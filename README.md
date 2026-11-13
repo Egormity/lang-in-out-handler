@@ -8,14 +8,13 @@ A Linux desktop app for dictation, live bilingual captions, translation, and tex
 | --- | --- |
 | Voice input | Record the microphone once and transcribe on Stop, or transcribe consecutive chunks. Copy the result or paste it into the active application. |
 | Live captions | Capture the default speaker output, including browser and media-player audio. Show a floating transcript and translation side by side. |
-| Translate | Translate typed, pasted, or clipboard text into your chosen language. |
-| Text to speech | Generate and play AI speech from text; save the generated WAV file. |
-| Handwriting | Draw with a mouse or pen; recognize automatically after a configurable pause or use Send to transcribe. |
-| History | Browse and copy locally saved transcripts and translations; delete history from the app. |
+| Translate | Translate text and read the original or translated text aloud. Replay, stop, or save the generated audio on the same page. |
+| Handwriting | Draw with a mouse or tablet pen, in the main window or an always-on-top floating canvas. Recognize automatically or use Send to transcribe. |
+| History | Search, browse, and copy locally saved text; delete history from the app. |
 
-Each mode has an instructions field. Recognition instructions supply vocabulary/context to the speech model; they are not a general text-editing instruction. Translation and speech instructions control language style and delivery.
+Each tool has an **Options** section for models and instructions, collapsed by default so the content stays prominent. Recognition instructions supply vocabulary/context to the speech model; they are not a general text-editing instruction. Translate includes separate translation and voice instructions. Preferences are grouped by connection, recognition, translation/speech, handwriting, and shortcuts.
 
-The floating caption window has independent **Transcript** and **Translation** visibility controls. **Translate audio** switches translation API requests on/off. Hiding the window or a pane does not stop capture. Use **Stop**, the capture shortcut, or the tray menu to stop.
+The floating caption window has just **Transcript** and **Translation** controls. Translation controls both its pane and translation of new audio; there is no separate Translate audio switch. Hiding the whole window does not stop capture. Use **Stop**, the capture shortcut, or the tray menu to stop.
 
 ## Install on Ubuntu / GNOME
 
@@ -41,6 +40,10 @@ Defaults: `gpt-transcribe` for speech recognition, `gpt-6-luna` for text transla
 
 Open **Handwriting** and draw with your mouse or tablet pen. Use **Undo stroke** and **Clear canvas** as needed. **Send to transcribe** works with automatic recognition turned off. Copy or edit the recognized text below the canvas.
 
+Choose **Float window** to keep handwriting above other applications. Its **On top** control reflects the verified pin state. **Dock back** (or closing the floating window) returns the same canvas to the main window without losing strokes, recognized text, or a pending recognition. You can reopen it from the tray or with `lang-in-out --action drawing`. GNOME may ask you to click an unfocused window once before it can be pinned.
+
+Pen handling supports Qt tablet events and driver-emulated mouse events. Pressure contact can start a stroke when a driver omits the initial tip-press event; hovering does not draw. Tablet behavior depends on the installed tablet driver and desktop session.
+
 In **Preferences**, choose the handwriting model, enable/disable automatic recognition, and set the pause from 0.2 to 10 seconds (1.2 seconds by default). Only the latest canvas snapshot is queued while recognition is busy, blank canvases are never sent, and results for an older drawing cannot overwrite newer content. Each automatic recognition is a billable image request.
 
 Handwriting defaults to `gpt-6.1-sol`, which correctly recognized the Japanese sample used in live verification. Recognition accuracy still depends on handwriting and model choice. Canvas images are not retained in history; recognized text is.
@@ -61,11 +64,12 @@ lang-in-out --action input
 lang-in-out --action output
 lang-in-out --action translate
 lang-in-out --action tts
+lang-in-out --action drawing
 ```
 
 The app uses a local single-instance connection, so shortcuts work whether the window is open or hidden. Closing the main window keeps the app in the system tray when a tray is available. Quit from the tray or run `lang-in-out --action quit`. Without a tray, closing the main window quits the app.
 
-For automatic insertion on Wayland, install/configure `ydotool` with an accessible user socket. On X11, install `xdotool`. If insertion is unavailable, your transcript remains on the clipboard for Ctrl+V. Input launched with a shortcut does not activate the main window. If the app itself has focus, it copies instead of pasting into its own controls.
+For background clipboard access and automatic insertion on Wayland, install `wl-clipboard` and configure `ydotool` with an accessible user socket. On X11, install `xdotool`. If insertion is unavailable, your transcript remains on the clipboard for Ctrl+V. Input launched with a shortcut does not activate the main window. If the app itself has focus, it copies instead of pasting into its own controls.
 
 ## Audio and captions
 
@@ -74,7 +78,7 @@ For automatic insertion on Wayland, install/configure `ydotool` with an accessib
 - Transcription and translation have separate queues, so recognized text can appear before its translation. If either queue falls too far behind, capture stops with a visible error rather than building an unbounded backlog.
 - Stop flushes the last partial chunk. A single recording/import is limited to 10 minutes; use chunks for longer audio. A single upload must be below 25 MB.
 - Chunk boundaries can split speech, and live requests have less context than complete recordings. Longer chunks trade latency for more context.
-- On GNOME Wayland, the app uses XWayland to support a real keep-above caption window. The window remains movable and resizable. Set `QT_QPA_PLATFORM=wayland` explicitly to use native Wayland, where keep-above depends on the compositor.
+- Wayland sessions use native Qt Wayland so tablet input works throughout the interface. On GNOME, pinning uses the desktop's window menu and verifies its checked Always on Top state. This needs `ydotool` with an accessible user socket and system Python's GI/AT-SPI bindings (`python3-gi`, `gir1.2-atspi-2.0`). The helper targets only this app's active caption/handwriting window; it does not change global shortcuts or Shell settings. If pinning cannot be verified, the app reports the failure instead of claiming the window is pinned. X11 sessions use the normal keep-above window flag.
 - Speech playback also appears in system-output capture when both are enabled. Stop captions if you do not want generated speech transcribed.
 
 ## Storage and privacy

@@ -1,10 +1,11 @@
 """Local transcript and translation history."""
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QDateTime, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QHeaderView,
+    QLineEdit,
     QMessageBox,
     QTableWidget,
     QTableWidgetItem,
@@ -14,6 +15,11 @@ from PySide6.QtWidgets import (
 
 from .common import TextPane, button, label, title_block
 
+MODE_NAMES = {
+    "input": "Voice input", "output": "Live captions", "translate": "Translation",
+    "tts": "Read aloud", "drawing": "Handwriting",
+}
+
 
 class HistoryPage(QWidget):
     refresh_requested = Signal()
@@ -22,6 +28,7 @@ class HistoryPage(QWidget):
     def __init__(self):
         super().__init__()
         self.entries = []
+        self.visible_entries = []
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 20)
         layout.setSpacing(14)
@@ -30,8 +37,12 @@ class HistoryPage(QWidget):
                 "History", "Revisit your transcripts and translations, stored on this computer."
             )
         )
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search saved text…")
+        self.search.textChanged.connect(self._render)
+        layout.addWidget(self.search)
         self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["When", "Mode", "Preview"])
+        self.table.setHorizontalHeaderLabels(["When", "Tool", "Text"])
         self.table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents
         )
@@ -62,24 +73,46 @@ class HistoryPage(QWidget):
 
     def set_entries(self, entries):
         self.entries = entries
-        self.table.setRowCount(len(entries))
-        for row, entry in enumerate(entries):
+        self._render()
+
+    def _render(self):
+        selected = self.table.currentRow()
+        selected_id = (self.visible_entries[selected].get("id")
+                       if 0 <= selected < len(self.visible_entries) else None)
+        query = self.search.text().strip().casefold()
+        self.visible_entries = [entry for entry in self.entries if not query or query in
+                                (entry.get("source_text", "") + " " +
+                                 entry.get("translated_text", "")).casefold()]
+        self.table.blockSignals(True)
+        self.table.setRowCount(len(self.visible_entries))
+        restore_row = 0
+        for row, entry in enumerate(self.visible_entries):
+            timestamp = entry.get("created_at", "")
+            date = QDateTime.fromString(timestamp, Qt.DateFormat.ISODate)
+            when = date.toLocalTime().toString("MMM d, HH:mm") if date.isValid() else timestamp
+            if entry.get("id") == selected_id:
+                restore_row = row
             for column, value in enumerate(
                 [
-                    entry.get("created_at", ""),
-                    entry.get("mode", ""),
+                    when,
+                    MODE_NAMES.get(entry.get("mode", ""), entry.get("mode", "")),
                     entry.get("source_text", "")[:150].replace("\n", " "),
                 ]
             ):
                 item = QTableWidgetItem(str(value))
                 item.setData(Qt.ItemDataRole.UserRole, entry.get("id"))
                 self.table.setItem(row, column, item)
-        self.detail.text.clear()
+        self.table.blockSignals(False)
+        if self.visible_entries:
+            self.table.selectRow(restore_row)
+            self._selected()
+        else:
+            self.detail.text.clear()
 
     def _selected(self):
         row = self.table.currentRow()
-        if 0 <= row < len(self.entries):
-            entry = self.entries[row]
+        if 0 <= row < len(self.visible_entries):
+            entry = self.visible_entries[row]
             text = entry.get("source_text", "")
             if entry.get("translated_text"):
                 text += "\n\n── Translation ──\n\n" + entry["translated_text"]

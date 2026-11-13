@@ -1,19 +1,11 @@
 """Debounced handwriting recognition controls; API work stays in the controller."""
 
 from PySide6.QtCore import QTimer, Signal
-from PySide6.QtWidgets import (
-    QCheckBox,
-    QHBoxLayout,
-    QLayout,
-    QPlainTextEdit,
-    QScrollArea,
-    QSpinBox,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QHBoxLayout, QLayout, QScrollArea, QVBoxLayout, QWidget
 
-from .common import TextPane, button, label, title_block
-from .drawing_canvas import DrawingCanvas
+from .common import button, label, title_block
+from .drawing_window import DrawingWindow
+from .drawing_workspace import DrawingWorkspace
 
 
 class DrawingPage(QWidget):
@@ -31,62 +23,56 @@ class DrawingPage(QWidget):
         self.scroll.setWidgetResizable(True)
         body = QWidget()
         layout = QVBoxLayout(body)
+        self.body_layout = layout
         layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         layout.setContentsMargins(28, 24, 28, 20)
         layout.setSpacing(10)
         self.scroll.setWidget(body)
         outer.addWidget(self.scroll)
-        layout.addWidget(
-            title_block(
-                "Handwriting", "Write characters or words, then turn them into editable text."
-            )
+        heading = QHBoxLayout()
+        heading.addWidget(
+            title_block("Handwriting", "Draw with your mouse or pen. Recognize with OpenAI."), 1
         )
-        layout.addWidget(label("Recognition instructions"))
-        self.instructions = QPlainTextEdit(settings.drawing_instructions)
-        self.instructions.setAccessibleName("Handwriting recognition instructions")
-        self.instructions.setMaximumHeight(66)
-        layout.addWidget(self.instructions)
-        toolbar = QHBoxLayout()
-        self.undo_button = button("Undo stroke")
-        self.clear_button = button("Clear canvas")
-        self.pen = QSpinBox()
-        self.pen.setRange(1, 16)
-        self.pen.setValue(4)
-        self.pen.setPrefix("Pen: ")
-        self.pen.setSuffix(" px")
-        self.pen.setMaximumWidth(130)
-        toolbar.addWidget(self.undo_button)
-        toolbar.addWidget(self.clear_button)
-        toolbar.addStretch()
-        toolbar.addWidget(self.pen)
-        layout.addLayout(toolbar)
-        self.canvas = DrawingCanvas()
+        self.float_button = button("Float window")
+        self.float_button.clicked.connect(self.show_floating)
+        heading.addWidget(self.float_button)
+        layout.addLayout(heading)
+        self.workspace = DrawingWorkspace(settings)
+        # Keep a single set of public controls for the existing controller interface.
+        for name in (
+            "canvas",
+            "instructions",
+            "result",
+            "auto_send",
+            "send_button",
+            "undo_button",
+            "clear_button",
+            "pen",
+            "status",
+            "advanced_toggle",
+        ):
+            setattr(self, name, getattr(self.workspace, name))
+        layout.addWidget(self.workspace, 1)
+        self.floating = DrawingWindow()
+        self.floating.dock_requested.connect(self.dock_workspace)
+        self.destroyed.connect(self.floating.deleteLater)
+        self.is_floating = False
+        self._floating_positioned = False
+        self.placeholder = QWidget()
+        placeholder_layout = QVBoxLayout(self.placeholder)
+        placeholder_layout.addWidget(
+            label("Your canvas is open in the floating handwriting window.", True)
+        )
+        restore = button("Dock canvas here")
+        restore.clicked.connect(self.dock_workspace)
+        placeholder_layout.addWidget(restore)
+        placeholder_layout.addStretch()
+        self.placeholder.hide()
+        layout.addWidget(self.placeholder, 1)
         self.pen.valueChanged.connect(lambda value: setattr(self.canvas, "pen_width", value))
         self.undo_button.clicked.connect(self.canvas.undo)
         self.clear_button.clicked.connect(self.canvas.clear)
-        layout.addWidget(self.canvas, 3)
-        options = QHBoxLayout()
-        self.auto_send = QCheckBox("Automatically recognize after drawing")
-        self.auto_send.setChecked(settings.drawing_auto_send)
-        options.addWidget(self.auto_send)
-        options.addStretch()
-        self.send_button = button("Send to transcribe", True)
-        self.send_button.setEnabled(False)
         self.send_button.clicked.connect(self.send)
-        options.addWidget(self.send_button)
-        layout.addLayout(options)
-        layout.addWidget(
-            label(
-                "Automatic recognition sends the canvas image to OpenAI. Set its delay in Preferences.",
-                True,
-            )
-        )
-        self.status = label("Draw something to begin.", True)
-        layout.addWidget(self.status)
-        self.result = TextPane(
-            "Recognized text", "Your handwriting will appear here as text.", False
-        )
-        layout.addWidget(self.result, 2)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setInterval(settings.drawing_debounce_ms)
@@ -95,6 +81,35 @@ class DrawingPage(QWidget):
         self.auto_send.toggled.connect(self._auto_changed)
         self.undo_button.setEnabled(False)
         self.clear_button.setEnabled(False)
+
+    def show_floating(self):
+        if not self.is_floating:
+            self.body_layout.removeWidget(self.workspace)
+            self.floating.set_workspace(self.workspace)
+            self.is_floating = True
+            self.placeholder.show()
+            self.float_button.setText("Show floating window")
+        if not self._floating_positioned:
+            self.floating.move(
+                self.window().frameGeometry().center() - self.floating.rect().center()
+            )
+            self._floating_positioned = True
+        self.floating.show_workspace()
+
+    def dock_workspace(self):
+        if self.is_floating:
+            self.floating.take_workspace()
+            self.body_layout.insertWidget(1, self.workspace, 1)
+            self.workspace.show()
+            self.is_floating = False
+            self.placeholder.hide()
+            self.float_button.setText("Float window")
+        self.floating.hide()
+
+    def shutdown(self):
+        self.timer.stop()
+        self.floating.pin_control.stop()
+        self.dock_workspace()
 
     def _canvas_changed(self, revision):
         self.timer.stop()

@@ -49,7 +49,7 @@ class Instance(QObject):
     def _read(self, client):
         while client.canReadLine():
             action = bytes(client.readLine(64)).decode(errors="replace").strip()
-            if action in {"show", "input", "output", "translate", "tts", "quit"}:
+            if action in {"show", "input", "output", "translate", "tts", "drawing", "quit"}:
                 self.action.emit(action)
 
     def _remove(self, client):

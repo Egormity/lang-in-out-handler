@@ -5,6 +5,7 @@ import sys
 from copy import deepcopy
 
 from PySide6.QtCore import QObject
+from PySide6.QtWidgets import QApplication
 
 from .api import OpenAIService
 from .audio import AudioCapture
@@ -22,6 +23,7 @@ class Controller(QObject):
         self.window, self.overlay = window, overlay
         self.store, self.credentials = store, credentials
         self.settings = store.load_settings()
+        self.settings.translation_enabled = self.settings.translation_visible
         self.key = credentials.get()
         self.jobs = Jobs(self)
         self.pipeline = CaptionPipeline(self.jobs, self)
@@ -66,11 +68,9 @@ class Controller(QObject):
 
     def status(self, message):
         self.window.set_status(message)
-        self.overlay.set_status(message)
 
     def fail(self, message):
         self.window.set_status(message, True)
-        self.overlay.set_status(message)
 
     def require_key(self):
         if not self.key:
@@ -165,6 +165,7 @@ class Controller(QObject):
             self.window.set_recording(mode, True)
             if mode == "output":
                 self.show_overlay()
+                self.overlay.set_status("Listening to system audio…")
             self.status("Listening to microphone…" if mode == "input" else "Listening to system audio…")
         except (OSError, RuntimeError, ValueError) as exc:
             self.fail(str(exc))
@@ -173,12 +174,16 @@ class Controller(QObject):
         self.workflows.cancel_import(mode)
         self.captures[mode].stop()
         self.status("Stopping capture; finishing the last audio segment…")
+        if mode == "output":
+            self.overlay.set_status("Finishing the last audio segment…")
 
     def _stopped(self, mode):
         self.window.set_recording(mode, False)
 
     def _capture_error(self, mode, message):
         self.fail(message)
+        if mode == "output":
+            self.overlay.set_status(message)
 
     def _audio(self, mode, audio):
         if self.accept_audio[mode]:
@@ -188,6 +193,8 @@ class Controller(QObject):
         self.accept_audio[mode] = False
         self.captures[mode].stop()
         self.fail(message)
+        if mode == "output":
+            self.overlay.set_status(message)
 
     def _transcript(self, mode, text):
         self.window.append_result(mode, text)
@@ -195,8 +202,7 @@ class Controller(QObject):
             self.overlay.append_caption(text)
         else:
             try:
-                paste = self.settings.auto_paste and not (
-                    self.window.isActiveWindow() or self.overlay.isActiveWindow())
+                paste = self.settings.auto_paste and QApplication.activeWindow() is None
                 separator = " " if (paste and self.last_dictation and text and
                                      self.last_dictation[-1].isascii() and text[0].isascii()) else ""
                 self.status(copy_and_paste(separator + text, paste))
@@ -209,7 +215,7 @@ class Controller(QObject):
         self.overlay.append_caption("", text)
 
     def _pending(self, mode, count):
-        if mode == "output":
+        if mode == "output" and self.accept_audio[mode]:
             self.overlay.set_status(f"Processing {count} audio segment(s)…" if count else
                                     "Listening…" if self.captures[mode].is_running else "Capture stopped.")
         if (not count and not self.captures[mode].is_running
@@ -233,7 +239,7 @@ class Controller(QObject):
         self.overlay.raise_()
 
     def action(self, action):
-        if action in {"input", "output", "translate", "tts"}:
+        if action in {"input", "output", "translate", "tts", "drawing"}:
             self.window.sync_mode_settings()
         if action in self.captures:
             if self.captures[action].is_running or action in self.workflows.imports:
@@ -241,25 +247,32 @@ class Controller(QObject):
             else:
                 self.start(action, getattr(self.settings, f"{action}_chunked"))
         elif action in ("translate", "tts"):
-            try:
-                text = clipboard_text()
-                self.window.pages[action].source.text.setPlainText(text)
-                if action == "translate":
-                    self.window.show_page("translate")
-                    self.window.show()
-                    self.workflows.translate(text)
-                else:
-                    self.workflows.speak(text)
-            except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
-                self.fail(str(exc))
+            # A Wayland clipboard owner may need our GUI event loop to answer a
+            # selection request. Read in a worker so global shortcuts cannot block it.
+            self.jobs.submit(lambda cancel, progress: clipboard_text(),
+                             lambda text: self._clipboard_action(action, text), self.fail)
+        elif action == "drawing":
+            self.window.show_page("drawing")
+            self.window.pages["drawing"].show_floating()
         else:
             self.window.show()
             self.window.raise_()
             self.window.activateWindow()
 
+    def _clipboard_action(self, action, text):
+        self.window.set_source_text(action, text)
+        if action == "translate":
+            self.window.show_page("translate")
+            self.window.show()
+            self.workflows.translate(text)
+        else:
+            self.workflows.speak(text)
+
     def shutdown(self):
         self.pipeline.shutdown()
+        self.overlay.pin_control.stop()
         self.handwriting.cancel()
+        self.window.pages["drawing"].shutdown()
         self.jobs.cancel_all()
         self.workflows.shutdown()
         for mode, capture in self.captures.items():
