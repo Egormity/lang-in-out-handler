@@ -5,8 +5,8 @@ from PySide6.QtTest import QSignalSpy
 
 from lang_handler.settings import Settings
 from lang_handler.ui.dropdown import CompactComboBox
+from lang_handler.ui.main_window import MainWindow
 from lang_handler.ui.theme import STYLE
-from lang_handler.ui.tool_settings import ToolSettings, ToolSettingsDialog
 
 
 def make_combo(qtbot, width=1200):
@@ -81,20 +81,23 @@ def test_long_labels_are_elided_with_full_tooltip(qtbot):
     combo.hidePopup()
 
 
-def test_settings_dialog_preserves_drafts_and_has_fixed_visible_actions(qtbot):
-    panel = ToolSettings("output", Settings())
-    dialog = ToolSettingsDialog(panel, "Captions")
-    qtbot.addWidget(dialog)
-    dialog.show_settings()
+def test_embedded_settings_reopen_saved_values_and_keep_actions_visible(qtbot):
+    window = MainWindow(Settings(), True)
+    qtbot.addWidget(window)
+    window.resize(850, 620)
+    window.show()
+    window.show_tool_settings("output")
+    panel = window.pages["output"].tool_settings
+    view = window.pages["output"].settings_view
     panel.instructions["output_instructions"].setPlainText("A pending vocabulary hint")
-    dialog.reject()
-    dialog.show_settings()
-    assert panel.instructions["output_instructions"].toPlainText() == "A pending vocabulary hint"
-    assert not dialog.isModal()
-    assert dialog.width() <= 600
-    assert dialog.height() <= 680
-    assert panel.actions.parentWidget() is dialog
-    assert dialog.scroll.horizontalScrollBar().maximum() == 0
+    view.back_button.click()
+    window.show_tool_settings("output")
+    assert panel.instructions["output_instructions"].toPlainText() == ""
+    assert not view.isWindow()
+    assert window.stack.currentWidget() is view
+    assert panel.actions.parentWidget() is view
+    assert view.scroll.horizontalScrollBar().maximum() == 0
+    panel.instructions["output_instructions"].setPlainText("Saved vocabulary hint")
     patch = QSignalSpy(panel.saved)
     panel.save_button.click()
-    assert patch.at(0)[0]["output_instructions"] == "A pending vocabulary hint"
+    assert patch.at(0)[0]["output_instructions"] == "Saved vocabulary hint"

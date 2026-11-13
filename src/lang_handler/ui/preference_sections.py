@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..prompts import builtin_instructions
 from ..reasoning import REASONING_EFFORTS, supports_reasoning
 from .common import label, language_combo, language_value, selection_combo
 from .preference_controls import NumberInput
@@ -49,14 +50,23 @@ def model(page, settings, form, key):
     return widget
 
 
-def instructions(page, settings, form, key):
+def instructions(page, settings, form, key, *, captions=False):
+    builtin = QPlainTextEdit(builtin_instructions(key, captions=captions))
+    builtin.setAccessibleName("Built-in instructions")
+    builtin.setReadOnly(True)
+    builtin.setStyleSheet("color: #99a59e;")
+    builtin.setFixedHeight(150)
+    if not hasattr(page, "builtin_instructions"):
+        page.builtin_instructions = {}
+    page.builtin_instructions[key] = builtin
+    form.addRow("Built-in instructions\n(read only)", builtin)
     widget = QPlainTextEdit(getattr(settings, key))
     widget.setAccessibleName(key.replace("_", " ").capitalize())
     widget.setTabChangesFocus(True)
-    widget.setPlaceholderText("Language, style, vocabulary, or pronunciation instructions…")
+    widget.setPlaceholderText("Optional style, vocabulary, or pronunciation preferences…")
     widget.setFixedHeight(80)
     page.instructions[key] = widget
-    page.fields.add(form, "Instructions", key, widget)
+    page.fields.add(form, "Custom instructions", key, widget)
 
 
 def toggle(page, form, title, key):

@@ -1,14 +1,17 @@
 """Selectable handwriting candidates with an action for each reading."""
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from .common import label
+from .copy_button import CopyButton
 from .icons import icon_button
+from .inline_audio import InlineAudio
 
 
 class CandidateRow(QWidget):
     speech_requested = Signal(str)
+    audio_requested = Signal(str, object)
 
     def __init__(self, text: str, index: int):
         super().__init__()
@@ -24,20 +27,25 @@ class CandidateRow(QWidget):
         reading.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         reading.setAccessibleName(f"Candidate {index}: {text}")
         row.addWidget(reading, 1)
-        self.copy = icon_button("copy", f"Copy candidate {index}")
+        self.copy = CopyButton(f"Copy candidate {index}", lambda: self.text)
         self.copy.setObjectName("quiet")
         self.copy.setAccessibleName(f"Copy candidate {index}")
-        self.copy.clicked.connect(lambda: QApplication.clipboard().setText(self.text))
         row.addWidget(self.copy)
-        self.speak = icon_button("speak", f"Speak candidate {index}")
+        self.audio = InlineAudio()
+        self.speak = self.audio.speak
         self.speak.setObjectName("quiet")
         self.speak.setAccessibleName(f"Speak candidate {index}")
-        self.speak.clicked.connect(lambda: self.speech_requested.emit(self.text))
-        row.addWidget(self.speak)
+        self.audio.requested.connect(self._request_audio)
+        row.addWidget(self.audio)
+
+    def _request_audio(self):
+        self.speech_requested.emit(self.text)
+        self.audio_requested.emit(self.text, self.audio)
 
 
 class DrawingCandidates(QWidget):
     speech_requested = Signal(str)
+    audio_requested = Signal(str, object)
     speech_stop_requested = Signal()
 
     def __init__(self):
@@ -76,12 +84,14 @@ class DrawingCandidates(QWidget):
         for index, text in enumerate(self.items, 1):
             row = CandidateRow(text, index)
             row.speech_requested.connect(self.speech_requested)
+            row.audio_requested.connect(self.audio_requested)
             self.rows.append(row)
             self.rows_layout.insertWidget(len(self.rows) - 1, row)
 
     def clear(self):
         self.items = []
         for row in self.rows:
+            row.audio.reset()
             self.rows_layout.removeWidget(row)
             row.hide()
             row.deleteLater()

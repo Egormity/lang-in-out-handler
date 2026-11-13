@@ -63,13 +63,13 @@ def test_floating_handwriting_does_not_carry_tool_settings(qtbot):
     qtbot.addWidget(window)
     drawing = window.pages["drawing"]
     drawing.settings_button.click()
-    assert drawing.settings_dialog.isVisible()
+    assert window.stack.currentWidget() is drawing.settings_view
     drawing.show_floating()
     try:
         assert not drawing.floating.isAncestorOf(drawing.tool_settings)
-        assert drawing.settings_dialog.isAncestorOf(drawing.tool_settings)
-        assert drawing.settings_dialog.parentWidget() is drawing
+        assert drawing.settings_view.isAncestorOf(drawing.tool_settings)
+        assert drawing.settings_view.parentWidget() is window.stack
         assert not drawing.floating.findChildren(QComboBox)
     finally:
-        drawing.settings_dialog.close()
+        window.show_page("drawing")
         drawing.shutdown()

@@ -2,6 +2,7 @@
 
 from .audio_controls import AudioSourceCombo
 from .common import label, selection_combo
+from .language_selectors import target_language_selector
 from .preference_controls import NumberInput
 from .preference_sections import group, instructions, language, model, number, reasoning, toggle
 
@@ -71,12 +72,9 @@ def translation(page, settings, layout, *, captions=False):
     form = group("Caption translation" if captions else "Translation", layout)
     model_widget = model(page, settings, form, "translation_model")
     reasoning(page, settings, form, "translation_reasoning", model_widget)
-    page.target_language = selection_combo(
-        ["English", "Russian", "Japanese", "Spanish", "French", "German", "Chinese", "Korean"],
-        settings.target_language,
-    )
+    page.target_language = target_language_selector(settings.target_language, compact=False)
     page.fields.add(form, "Translate into", "target_language", page.target_language)
-    instructions(page, settings, form, "translation_instructions")
+    instructions(page, settings, form, "translation_instructions", captions=captions)
     if captions:
         form.addRow(label("Translation settings are shared with the Translate tool.", True))
 

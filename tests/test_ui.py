@@ -325,11 +325,12 @@ def test_translate_contains_speech_for_both_text_panes(qtbot):
     preferences.save_preferences.click()
     page.tool_settings.target_language.setCurrentText("Japanese")
     page.tool_settings.save_button.click()
-    requested = QSignalSpy(window.speech_requested)
+    requested = QSignalSpy(window.audio_requested)
     page.speak_original.click()
     page.speak_translation.click()
-    assert requested.at(0) == ["Original words"]
-    assert requested.at(1) == ["Translated words"]
+    assert requested.count() == 2
+    assert requested.at(0)[0] == "Original words"
+    assert requested.at(1)[0] == "Translated words"
     assert window.settings.tts_instructions == "Speak slowly."
     assert window.settings.target_language == "Japanese"
     assert not hasattr(page, "tts_instructions")
@@ -365,7 +366,7 @@ def test_preferences_are_global_and_tool_settings_are_on_their_pages(qtbot):
     for mode in ("input", "output", "translate", "drawing"):
         assert window.pages[mode].tool_settings.mode == mode
         assert window.pages[mode].settings_button.accessibleName().endswith("settings")
-        assert not window.pages[mode].settings_dialog.isVisible()
+        assert not window.pages[mode].settings_view.isVisible()
 
 
 def test_tool_layouts_fit_and_settings_do_not_expand_into_the_work_area(qtbot):
@@ -382,21 +383,21 @@ def test_tool_layouts_fit_and_settings_do_not_expand_into_the_work_area(qtbot):
                 page.results if mode == "input" else page.canvas
             )
             assert content.height() >= 100
-            initial_size = content.size()
             page.settings_button.click()
             qtbot.wait(20)
-            dialog = page.settings_dialog
-            assert dialog.isVisible()
-            assert not dialog.isModal()
-            assert dialog.width() <= 600
-            assert dialog.scroll.horizontalScrollBar().maximum() == 0
-            assert page.tool_settings.actions.geometry().bottom() <= dialog.height()
-            assert content.size() == initial_size
-            dialog.close()
+            view = page.settings_view
+            assert window.stack.currentWidget() is view
+            assert view.isVisible()
+            assert not view.isWindow()
+            assert window.nav_buttons[mode].isChecked()
+            assert view.scroll.horizontalScrollBar().maximum() == 0
+            assert page.tool_settings.actions.geometry().bottom() < view.scroll.y()
+            view.back_button.click()
+            assert window.stack.currentWidget() is page
 
 
 
-def test_preferences_tabs_and_footer_remain_separate_at_minimum_size(qtbot):
+def test_preferences_tabs_and_header_remain_separate_at_minimum_size(qtbot):
     window = MainWindow(Settings(), True)
     qtbot.addWidget(window)
     window.show_page("preferences")
@@ -405,6 +406,6 @@ def test_preferences_tabs_and_footer_remain_separate_at_minimum_size(qtbot):
     for size in [(1120, 780), (850, 620)]:
         window.resize(*size)
         qtbot.wait(20)
-        assert page.tabs.geometry().bottom() < page.save_preferences.geometry().top()
+        assert page.save_preferences.geometry().bottom() < page.tabs.geometry().top()
         assert page.tabs.tabBar().sizeHint().width() <= page.tabs.tabBar().width()
         assert page.save_preferences.geometry().bottom() <= page.height()

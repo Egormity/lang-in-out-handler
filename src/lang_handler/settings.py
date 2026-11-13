@@ -2,6 +2,15 @@
 
 from dataclasses import asdict, dataclass, field
 
+_OLD_STOCK_INSTRUCTIONS = {
+    "translation_instructions": "Translate naturally. Preserve names, tone, and meaning.",
+    "tts_instructions": "Speak naturally and clearly.",
+    "drawing_instructions": (
+        "Recognize the handwriting. Return plausible text candidates, most likely first. "
+        "Preserve the original language. Do not translate or explain."
+    ),
+}
+
 
 @dataclass
 class Settings:
@@ -19,9 +28,9 @@ class Settings:
     drawing_reasoning: str = "medium"
     input_instructions: str = ""
     output_instructions: str = ""
-    translation_instructions: str = "Translate naturally. Preserve names, tone, and meaning."
-    tts_instructions: str = "Speak naturally and clearly."
-    drawing_instructions: str = "Recognize the handwriting. Return plausible text candidates, most likely first. Preserve the original language. Do not translate or explain."
+    translation_instructions: str = ""
+    tts_instructions: str = ""
+    drawing_instructions: str = ""
     drawing_auto_send: bool = True
     drawing_debounce_ms: int = 1200
     drawing_pen_width: int = 4
@@ -52,6 +61,9 @@ class Settings:
     @classmethod
     def from_dict(cls, data: dict) -> "Settings":
         data = dict(data)
+        for key, previous_default in _OLD_STOCK_INSTRUCTIONS.items():
+            if data.get(key) == previous_default:
+                data[key] = ""
         if "input_delivery" not in data and "auto_paste" in data:
             data["input_delivery"] = "copy_and_paste" if data["auto_paste"] else "copy"
         if "chunk_seconds" in data:

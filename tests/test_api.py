@@ -10,6 +10,7 @@ from openai import OpenAI
 from lang_handler.api import OpenAIService
 from lang_handler.errors import ServiceError
 from lang_handler.network import proxy_url, websocket_proxy
+from lang_handler.prompts import builtin_instructions
 from lang_handler.results import TranslationResult
 from lang_handler.tts_api import realtime_speech
 
@@ -88,17 +89,20 @@ def test_translation_is_stateless_and_keeps_input_separate():
         TranslationResult("Hello.", "Konnichiwa.", "/həˈloʊ/")
     )
     body = json.loads(requests[0].content)
-    assert body["input"] == "こんにちは。"
+    assert json.loads(body["input"]) == {
+        "source_text": "こんにちは。", "custom_instructions": "Keep names."
+    }
     assert body["store"] is False
     assert body["reasoning"] == {"effort": "medium"}
     assert "English" in body["instructions"]
-    assert "Keep names." in body["instructions"]
+    assert "Keep names." not in body["instructions"]
+    assert body["instructions"].startswith(builtin_instructions("translation_instructions"))
     assert "ORIGINAL" in body["instructions"]
     assert "TRANSLATED" in body["instructions"]
     schema = body["text"]["format"]
     assert schema["strict"] is True
     assert set(schema["schema"]["required"]) == {
-        "translation", "source_pronunciation", "translation_pronunciation"
+        "translation", "source_pronunciation", "translation_pronunciation", "source_correction"
     }
     service.close()
 
@@ -198,7 +202,10 @@ def test_realtime_tts_waits_for_configuration_and_collects_audio(monkeypatch):
         "conversation.item.create",
         "response.create",
     ]
-    assert socket.sent[1]["item"]["content"][0]["text"] == "こんにちは。"
+    assert json.loads(socket.sent[1]["item"]["content"][0]["text"]) == {
+        "source_text": "こんにちは。", "custom_instructions": "Speak gently."
+    }
+    assert socket.sent[0]["session"]["instructions"] == builtin_instructions("tts_instructions")
     assert socket.closed
 
 

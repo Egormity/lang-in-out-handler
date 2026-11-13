@@ -1,4 +1,5 @@
 import base64
+import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -24,7 +25,10 @@ def test_canvas_uses_vision_input_and_never_response_storage():
     image = payload["input"][0]["content"][0]
     assert image["type"] == "input_image"
     assert base64.b64decode(image["image_url"].split(",", 1)[1]) == png
-    assert "Japanese katakana" in payload["instructions"]
+    assert "Japanese katakana" not in payload["instructions"]
+    assert json.loads(payload["input"][0]["content"][1]["text"]) == {
+        "custom_instructions": "Japanese katakana"
+    }
 
 
 def test_invalid_canvas_rejected_before_network():
@@ -38,16 +42,17 @@ def test_invalid_canvas_rejected_before_network():
 def test_canvas_returns_distinct_nonempty_candidates():
     client = Mock()
     client.responses.create.return_value = SimpleNamespace(
-        output_text='{"items": [" カフェ ", "カフェ", "", "カフエ"]}'
+        output_text='{"items": [" わ ", "わ", "", "ね", "れ"]}'
     )
     result = OpenAIService("test-only", client=client).recognize_handwriting(
         b"\x89PNG\r\n\x1a\ncanvas-test", "gpt-6-luna"
     )
-    assert result == ["カフェ", "カフエ"]
+    assert result == ["わ", "ね", "れ"]
     schema = client.responses.create.call_args.kwargs["text"]["format"]
     assert schema["type"] == "json_schema"
     assert schema["strict"] is True
     assert schema["schema"]["properties"]["items"]["type"] == "array"
+    assert "minItems" not in schema["schema"]["properties"]["items"]
 
 
 @pytest.mark.parametrize("result", ['{"items": []}', '{"items": [" "]}'])

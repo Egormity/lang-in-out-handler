@@ -14,6 +14,7 @@ from .dictation import DictationDelivery
 from .handwriting import Handwriting
 from .jobs import Jobs
 from .pipeline import CaptionPipeline
+from .recording_cues import RecordingCues
 from .results import TranslationResult
 from .shortcuts import GlobalShortcuts
 from .workflows import Workflows
@@ -37,6 +38,9 @@ class Controller(QObject):
         self.accept_audio = {"input": True, "output": True}
         self.caption_history = {}
         self.captures = {mode: AudioCapture(self) for mode in ("input", "output")}
+        self.recording_cues = RecordingCues(self)
+        self.captures["input"].started.connect(self.recording_cues.recording_started)
+        self.captures["input"].stopped.connect(self.recording_cues.recording_stopped)
         for mode, capture in self.captures.items():
             capture.chunk.connect(lambda audio, m=mode: self._audio(m, audio))
             capture.error.connect(lambda message, m=mode: self._capture_error(m, message))
@@ -53,6 +57,7 @@ class Controller(QObject):
         window.file_requested.connect(self.workflows.import_file)
         window.translate_requested.connect(self.workflows.translate)
         window.speech_requested.connect(self.workflows.speak)
+        window.audio_requested.connect(self.workflows.speak)
         window.speech_stop_requested.connect(self.workflows.stop_speech)
         window.speech_replay_requested.connect(self.workflows.replay)
         window.drawing_requested.connect(self.handwriting.recognize)
@@ -65,7 +70,7 @@ class Controller(QObject):
         window.history_refresh_requested.connect(self.refresh_history)
         window.history_delete_requested.connect(self.delete_history)
         overlay.stop_requested.connect(lambda: self.stop("output"))
-        overlay.speech_requested.connect(self.workflows.speak)
+        overlay.audio_requested.connect(self.workflows.speak)
         overlay.speech_stop_requested.connect(self.workflows.stop_speech)
         self.workflows.speech_active_changed.connect(window.set_speech_active)
         self.workflows.speech_active_changed.connect(overlay.set_speech_active)
@@ -302,12 +307,11 @@ class Controller(QObject):
             self.window.show()
             self.workflows.translate(text)
         else:
-            self.workflows.speak(text)
+            self.workflows.speak(text, self.window.pages["translate"].source.audio)
 
     def shutdown(self):
+        self.recording_cues.close()
         self.pipeline.shutdown()
-        for mode in ("input", "output", "translate", "drawing"):
-            self.window.pages[mode].settings_dialog.close()
         self.dictation.close()
         self.overlay.pin_control.stop()
         self.handwriting.cancel()

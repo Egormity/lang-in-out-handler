@@ -1,8 +1,7 @@
 """A quiet pronunciation guide immediately below its text."""
 
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QSizePolicy, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QWidget
 
-from .icons import icon_button
 from .text_edit import GrowingTextEdit
 
 
@@ -17,10 +16,7 @@ class PronunciationGuide(QWidget):
         self.text.setObjectName("pronunciationText")
         self.text.setReadOnly(True)
         self.text.setAccessibleName("Pronunciation guide")
-        self.copy = icon_button("copy", "Copy pronunciation")
-        self.copy.clicked.connect(lambda: QApplication.clipboard().setText(self.text.toPlainText()))
         layout.addWidget(self.text, 1)
-        layout.addWidget(self.copy)
         self.hide()
 
     def set_text(self, text):

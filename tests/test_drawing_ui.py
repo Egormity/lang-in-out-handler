@@ -118,7 +118,7 @@ def test_drawing_controls_never_overlap_canvas_at_small_window_sizes(qtbot):
         qtbot.wait(30)
         canvas_bottom = page.canvas.geometry().bottom()
         assert page.undo_button.geometry().bottom() < page.canvas.geometry().top()
-        assert page.send_button.geometry().top() > page.result.geometry().bottom()
+        assert page.send_button.geometry().bottom() < page.canvas.geometry().top()
         assert page.result.geometry().top() > canvas_bottom
         page.scroll.ensureWidgetVisible(page.result)
         qtbot.wait(10)
@@ -201,7 +201,7 @@ def test_floating_editor_keeps_canvas_large_and_contains_no_preferences(qtbot):
         assert page.canvas.height() >= 200
         assert page.canvas.height() > page.result.height()
         assert page.undo_button.geometry().bottom() < page.canvas.geometry().top()
-        assert page.send_button.geometry().top() > page.result.geometry().bottom()
+        assert page.send_button.geometry().bottom() < page.canvas.geometry().top()
         assert page.result.geometry().top() > page.canvas.geometry().bottom()
     for kind in (QCheckBox, QComboBox, QSpinBox, QPlainTextEdit):
         assert page.floating.findChildren(kind) == []

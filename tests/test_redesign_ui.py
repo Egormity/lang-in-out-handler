@@ -69,11 +69,11 @@ def test_capture_has_one_primary_action_and_contextual_settings(qtbot):
     page.set_recording(True)
     assert page.start_button.isHidden()
     assert page.stop_button.isVisible()
+    requested = QSignalSpy(page.settings_requested)
     page.settings_button.click()
-    qtbot.wait(20)
-    assert page.settings_dialog.isVisible()
-    assert page.settings_dialog.isAncestorOf(page.tool_settings)
-    page.settings_dialog.close()
+    assert requested.count() == 1
+    assert page.settings_view.isAncestorOf(page.tool_settings)
+    assert not page.settings_view.isWindow()
 
 
 def test_text_and_pronunciation_stay_together_and_actions_are_accessible(qtbot):
@@ -92,10 +92,10 @@ def test_text_and_pronunciation_stay_together_and_actions_are_accessible(qtbot):
     assert requested.at(0) == ["カフェ"]
     assert original.speak.text() == ""
     assert original.speak.accessibleName() == "Speak original"
-    assert page.run.mapTo(page, QPoint()).y() > page.splitter.geometry().bottom()
+    assert page.run.mapTo(page, QPoint()).y() < page.splitter.geometry().top()
 
 
-def test_floating_canvas_keeps_settings_out_and_recognize_below_canvas(qtbot):
+def test_floating_canvas_keeps_settings_out_and_recognize_above_canvas(qtbot):
     page = DrawingPage(Settings(drawing_auto_send=False))
     qtbot.addWidget(page)
     page.setStyleSheet(STYLE)
@@ -105,7 +105,7 @@ def test_floating_canvas_keeps_settings_out_and_recognize_below_canvas(qtbot):
         qtbot.wait(20)
         assert not page.floating.findChildren(QComboBox)
         assert not page.floating.isAncestorOf(page.tool_settings)
-        assert page.send_button.mapTo(page.workspace, QPoint()).y() > page.canvas.geometry().bottom()
+        assert page.send_button.mapTo(page.workspace, QPoint()).y() < page.canvas.geometry().top()
         assert page.canvas.height() >= 200
     finally:
         page.shutdown()
@@ -125,7 +125,7 @@ def test_floating_captions_update_one_continuous_document(qtbot):
     overlay.annotate_translation(1, TranslationResult("It's sunny", "Kyō wa", "/ɪts ˈsʌni/"))
     overlay.annotate_translation(2, TranslationResult("today.", "hare desu", "/təˈdeɪ/"))
     assert overlay.translation.toPlainText() == "It's sunny today."
-    assert not overlay.findChildren(QComboBox)
+    assert all(combo.objectName() == "audioSpeed" for combo in overlay.findChildren(QComboBox))
     overlay.clear()
     overlay.annotate_translation(1, TranslationResult("stale", "stale", "stale"))
     assert overlay.translation.toPlainText() == ""

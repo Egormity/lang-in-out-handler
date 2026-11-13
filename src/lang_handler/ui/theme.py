@@ -11,8 +11,10 @@ QLabel#eyebrow { font-size: 10px; color: #8d9992; }
 QLabel#title { font-size: 24px; font-weight: 600; }
 QLabel#subtitle { color: #a1aaa5; font-size: 13px; }
 QLabel#section { color: #d7dfda; font-weight: 500; }
-QLabel#status { padding: 6px 12px; color: #a4afa8; font-size: 12px; }
-QLabel#status[error="true"] { color: #ffb7af; }
+QWidget#toast { background: #303c35; border: 1px solid #647c6c; border-radius: 9px; }
+QWidget#toast[error="true"] { background: #422e2e; border-color: #95645f; }
+QLabel#toastMessage { color: #edf5ef; font-size: 13px; }
+QLabel#toastMessage[error="true"] { color: #ffccc6; }
 QLabel#badge { color: #a4b5ab; font-size: 11px; padding: 5px 0; }
 QLabel#muted { color: #99a59e; font-size: 13px; }
 QPushButton { background: transparent; border: 1px solid #414a45; border-radius: 7px; padding: 8px 14px; }
@@ -44,6 +46,16 @@ QSpinBox#preferenceNumber QLineEdit, QDoubleSpinBox#preferenceNumber QLineEdit {
 QComboBox { min-height: 20px; padding-right: 28px; }
 QComboBox::drop-down { border: none; width: 28px; }
 QComboBox QAbstractItemView { background: #252d28; selection-background-color: #355d43; border: 1px solid #4d6153; padding: 3px; }
+QComboBox#paneLanguage { background: transparent; border: 1px solid transparent; color: #a3b0a7; padding: 3px 28px 3px 0; min-height: 20px; }
+QComboBox#paneLanguage:hover, QComboBox#paneLanguage:focus { background: #232b26; border-color: #39463d; }
+QWidget#inlineAudio, QWidget#inlineAudioControls { background: transparent; }
+QLabel#audioTime { color: #a3b0a7; font-size: 10px; }
+QComboBox#audioSpeed { background: transparent; border: none; padding: 3px 20px 3px 3px; min-height: 20px; font-size: 11px; }
+QComboBox#audioSpeed::drop-down { width: 18px; }
+QComboBox#audioSpeed:hover, QComboBox#audioSpeed:focus { background: #29322d; }
+QSlider#audioProgress::groove:horizontal { background: #46524a; height: 3px; border-radius: 1px; }
+QSlider#audioProgress::sub-page:horizontal { background: #9ae0c0; border-radius: 1px; }
+QSlider#audioProgress::handle:horizontal { background: #b0ebce; width: 9px; margin: -3px 0; border-radius: 4px; }
 QCheckBox { spacing: 8px; padding: 4px 0; }
 QCheckBox::indicator { width: 17px; height: 17px; border-radius: 4px; border: 1px solid #7a8b7e; background: #1b211e; }
 QCheckBox::indicator:checked { background: #9ae0c0; border: 1px solid #9ae0c0; }
@@ -55,6 +67,7 @@ QLabel#settingsTitle { font-size: 21px; font-weight: 600; padding: 4px 0; }
 QToolButton#sectionToggle { color: #a6b9ad; border: none; padding: 5px 0; background: transparent; }
 QFrame#optionsBody { background: transparent; border: none; }
 QWidget#textPane, QWidget#textBody { background: transparent; border: none; }
+QWidget#dictationEntry { background: transparent; border: none; border-bottom: 1px solid #343f38; }
 QPlainTextEdit#contentText { background: transparent; border: none; padding: 4px 0; font-size: 22px; color: #eef1ee; }
 QPlainTextEdit#pronunciationText { background: transparent; border: none; padding: 0; font-size: 15px; color: #a3b0a7; }
 QScrollArea { border: none; background: transparent; }

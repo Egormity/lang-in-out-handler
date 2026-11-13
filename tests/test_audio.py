@@ -132,3 +132,63 @@ def test_invalid_chunk_length_is_rejected_before_recording():
     capture = audio.AudioCapture()
     with pytest.raises(ValueError, match="between 2 and 30"):
         capture.start(chunk_seconds=1.5)
+
+
+def test_capture_started_fires_once_when_pcm_first_arrives(qtbot, monkeypatch):
+    from test_recording_cues import FakeEffect
+
+    from lang_handler.recording_cues import RecordingCues
+
+    monkeypatch.setattr(audio, "capture_command", lambda source: [
+        sys.executable, "-c",
+        ("import sys,time; sys.stdout.buffer.write(b'\\x10\\x04'*4000); "
+        "sys.stdout.buffer.flush(); time.sleep(.03); "
+        "sys.stdout.buffer.write(b'\\x10\\x04'*4000)"),
+    ])
+    capture = audio.AudioCapture()
+    cues = RecordingCues(effect_factory=FakeEffect)
+    events = []
+    capture.started.connect(lambda: events.append("started"))
+    capture.started.connect(cues.recording_started)
+    capture.level.connect(lambda level: events.append("level") if level else None)
+    capture.chunk.connect(lambda chunk: events.append("chunk"))
+    capture.stopped.connect(cues.recording_stopped)
+    try:
+        with qtbot.waitSignal(capture.stopped, timeout=5000):
+            capture.start(chunked=False)
+        assert events.count("started") == 1
+        assert events[0] == "started"
+        assert events.count("level") >= 2
+        assert events[-1] == "chunk"
+        assert cues.effects["start"].plays == cues.effects["stop"].plays == 1
+    finally:
+        capture.stop()
+        capture.wait()
+        cues.close()
+
+
+@pytest.mark.parametrize("missing_command", [False, True])
+def test_failed_capture_never_plays_recording_cues(qtbot, monkeypatch, missing_command):
+    from test_recording_cues import FakeEffect
+
+    from lang_handler.recording_cues import RecordingCues
+
+    command = (["/nonexistent/lang-in-out-capture"] if missing_command else [
+        sys.executable, "-c", "import sys; sys.stderr.write('No audio source'); sys.exit(1)"
+    ])
+    monkeypatch.setattr(audio, "capture_command", lambda source: command)
+    capture = audio.AudioCapture()
+    cues = RecordingCues(effect_factory=FakeEffect)
+    errors = []
+    capture.error.connect(errors.append)
+    capture.started.connect(cues.recording_started)
+    capture.stopped.connect(cues.recording_stopped)
+    try:
+        with qtbot.waitSignal(capture.stopped, timeout=5000):
+            capture.start()
+        assert errors
+        assert cues.effects["start"].plays == cues.effects["stop"].plays == 0
+    finally:
+        capture.stop()
+        capture.wait()
+        cues.close()

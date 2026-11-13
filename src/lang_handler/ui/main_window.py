@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 
-from PySide6.QtCore import QSize, QTimer, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QHBoxLayout,
@@ -26,6 +26,7 @@ from .preferences import PreferencesPage
 from .speech_controls import SpeechControls
 from .text_pages import TranslatePage
 from .theme import STYLE
+from .toast import Toast
 
 
 class MainWindow(QMainWindow):
@@ -34,6 +35,7 @@ class MainWindow(QMainWindow):
     file_requested = Signal(str, str, bool)
     translate_requested = Signal(str)
     speech_requested = Signal(str)
+    audio_requested = Signal(str, object)
     speech_stop_requested = Signal()
     speech_replay_requested = Signal(str)
     drawing_requested = Signal(bytes, int)
@@ -105,6 +107,12 @@ class MainWindow(QMainWindow):
             self.nav_buttons[mode] = item
             nav.addWidget(item)
             self.stack.addWidget(page)
+        self.settings_views = {}
+        for mode in ("input", "output", "translate", "drawing"):
+            view = self.pages[mode].settings_view
+            self.settings_views[mode] = view
+            self.stack.addWidget(view)
+            view.back_requested.connect(lambda key=mode: self.show_page(key))
         nav.addSpacing(14)
         self.connection_badge = label("Key saved" if api_key_present else "API key needed")
         self.connection_badge.setObjectName("badge")
@@ -113,32 +121,25 @@ class MainWindow(QMainWindow):
         content.addWidget(sidebar)
         content.addWidget(self.stack, 1)
         shell.addLayout(content, 1)
-        self.status = QLabel("Add your OpenAI API key in Preferences." if not api_key_present else "")
-        self.status.setObjectName("status")
-        self.status.setWordWrap(True)
+        self.toast = Toast(central)
+        self.status = self.toast.message
         self.speech_controls = SpeechControls()
         self.speech_controls.layout().setContentsMargins(16, 6, 16, 6)
         self.speech_controls.stop_requested.connect(self.speech_stop_requested)
         self.speech_controls.replay_requested.connect(self.speech_replay_requested)
         self.speech_controls.hide()
         self.pages["preferences"].attach_speech_controls(self.speech_controls)
-        footer = QHBoxLayout()
-        footer.setContentsMargins(0, 0, 12, 0)
-        footer.addWidget(self.status, 1)
         self.stop_audio = icon_button("stop", "Stop speech")
         self.stop_audio.clicked.connect(self.speech_stop_requested)
         self.stop_audio.hide()
-        footer.addWidget(self.stop_audio)
-        shell.addLayout(footer)
-        self.status.setVisible(not api_key_present)
-        self.status_timer = QTimer(self)
-        self.status_timer.setSingleShot(True)
-        self.status_timer.timeout.connect(self.status.hide)
+        nav.addWidget(self.stop_audio, 0, Qt.AlignmentFlag.AlignLeft)
         self.setCentralWidget(central)
         for editor in self.findChildren(QPlainTextEdit):
             editor.setTabChangesFocus(True)
         self._connect_pages()
         self.show_page("input" if api_key_present else "preferences")
+        if not api_key_present:
+            self.set_status("Add your OpenAI API key in Preferences.")
 
     def _connect_pages(self):
         for mode in ("input", "output"):
@@ -149,20 +150,23 @@ class MainWindow(QMainWindow):
                 lambda path, chunked, key=mode: self._file(key, path, chunked)
             )
             page.options_changed.connect(self._apply_settings_patch)
-            page.speech_requested.connect(self._speak)
+            page.audio_requested.connect(self.audio_requested)
         self.pages["output"].overlay_requested.connect(self.overlay_requested)
         self.pages["translate"].requested.connect(self._translate)
-        self.pages["translate"].speech_requested.connect(self._speak)
+        self.pages["translate"].audio_requested.connect(self.audio_requested)
         self.pages["drawing"].requested.connect(self._drawing)
+        self.pages["drawing"].options_changed.connect(self._apply_settings_patch)
         self.pages["drawing"].cancel_requested.connect(self.drawing_cancel_requested)
-        self.pages["drawing"].speech_requested.connect(self._speak)
+        self.pages["drawing"].audio_requested.connect(self.audio_requested)
         self.pages["drawing"].speech_stop_requested.connect(self.speech_stop_requested)
-        self.pages["history"].speech_requested.connect(self._speak)
+        self.pages["history"].audio_requested.connect(self.audio_requested)
         for mode in ("input", "output", "translate", "drawing"):
             self.pages[mode].settings_saved.connect(self._apply_settings_patch)
+            self.pages[mode].settings_requested.connect(lambda key=mode: self.show_tool_settings(key))
         self.pages["translate"].options_changed.connect(self._apply_settings_patch)
         preferences = self.pages["preferences"]
         preferences.reset_all_requested.connect(self._stage_all_defaults)
+        preferences.discard_requested.connect(self._discard_preferences)
         preferences.saved.connect(self._save_preferences)
         preferences.key_saved.connect(self.key_saved)
         preferences.key_test_requested.connect(self.key_test_requested)
@@ -171,7 +175,7 @@ class MainWindow(QMainWindow):
         self.pages["history"].refresh_requested.connect(self.history_refresh_requested)
 
     def sync_mode_settings(self):
-        """Quick controls save immediately; settings dialogs keep drafts until Save."""
+        """Quick controls save immediately; settings pages keep drafts until Save."""
         return self.settings
 
     def _apply_settings_patch(self, patch):
@@ -183,6 +187,12 @@ class MainWindow(QMainWindow):
         self._reset_all_pending = True
         for mode in ("input", "output", "translate", "drawing"):
             self.pages[mode].tool_settings.reset_section()
+
+    def _discard_preferences(self):
+        if self._reset_all_pending:
+            self._reset_all_pending = False
+            for mode in ("input", "output", "translate", "drawing"):
+                self.pages[mode].tool_settings.discard_changes()
 
     def _capture(self, mode, chunked):
         self.sync_mode_settings()
@@ -212,20 +222,24 @@ class MainWindow(QMainWindow):
         mode = "translate" if mode == "tts" else mode
         if mode not in self.pages:
             return
+        if mode == "preferences" and self.stack.currentWidget() is not self.pages[mode]:
+            self.pages[mode].discard_changes()
         self.stack.setCurrentWidget(self.pages[mode])
         self.nav_buttons[mode].setChecked(True)
         if mode == "history":
             self.history_refresh_requested.emit()
 
+    def show_tool_settings(self, mode: str):
+        view = self.settings_views.get(mode)
+        if view is None:
+            return
+        if self.stack.currentWidget() is not view:
+            view.begin_edit()
+        self.stack.setCurrentWidget(view)
+        self.nav_buttons[mode].setChecked(True)
+
     def set_status(self, text: str, error: bool = False):
-        self.status_timer.stop()
-        self.status.setText(text)
-        self.status.setVisible(bool(text))
-        if text and not error:
-            self.status_timer.start(6000)
-        self.status.setProperty("error", error)
-        self.status.style().unpolish(self.status)
-        self.status.style().polish(self.status)
+        self.toast.show_message(text, error)
 
     def set_recording(self, mode: str, active: bool):
         if mode in ("input", "output"):

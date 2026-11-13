@@ -105,6 +105,6 @@ def test_connection_proxy_commit_survives_shortcuts_and_preserves_pending_edits(
     assert c.window.settings.api_proxy_url == "http://proxy.example:8080"
     assert c.store.load_settings().api_proxy_url == "http://proxy.example:8080"
     assert preferences.instructions["tts_instructions"].toPlainText() == "Pending voice instructions."
-    assert c.settings.tts_instructions == "Speak naturally and clearly."
+    assert c.settings.tts_instructions == ""
     assert drawing.collect()["drawing_language"] == "ja"
     assert c.settings.drawing_language == ""

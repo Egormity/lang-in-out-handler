@@ -7,10 +7,12 @@ from copy import deepcopy
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Signal
+from shiboken6 import isValid
 
 from .api import OpenAIService
 from .desktop import play_audio
 from .file_import import FileImports
+from .ui.inline_audio import audio_is_active, stop_all_audio
 
 
 class Workflows(QObject):
@@ -44,6 +46,8 @@ class Workflows(QObject):
             return
         settings = deepcopy(self.c.settings)
         self.c.status("Translating…")
+        page = self.c.window.pages["translate"]
+        page.set_busy(True)
 
         def work(cancel, progress):
             service = OpenAIService(key, proxy=settings.api_proxy_url or None)
@@ -64,11 +68,13 @@ class Workflows(QObject):
             self.c.status("Translation ready." if displayed else
                           "Translation saved in History; the original text or target language changed.")
 
-        self.translation_job = self.c.jobs.submit(
-            work, success, self.c.fail, finished=lambda: setattr(self, "translation_job", None)
-        )
+        def done():
+            self.translation_job = None
+            page.set_busy(False)
 
-    def speak(self, text):
+        self.translation_job = self.c.jobs.submit(work, success, self.c.fail, finished=done)
+
+    def speak(self, text, recipient=None):
         if not text.strip():
             return
         key = self.c.require_key()
@@ -82,7 +88,18 @@ class Workflows(QObject):
         settings = deepcopy(self.c.settings)
         self.stop_speech()
         self.c.status("Generating speech…")
+        revision = recipient.revision if recipient is not None else None
+        if recipient is not None:
+            if not recipient.property("workflowConnected"):
+                recipient.active_changed.connect(self._inline_activity)
+                recipient.error.connect(self.c.fail)
+                recipient.setProperty("workflowConnected", True)
+            recipient.set_generating(True)
         self.speech_active_changed.emit(True)
+
+        def current_recipient():
+            return (recipient is not None and isValid(recipient)
+                    and recipient.revision == revision)
 
         def work(cancel, progress):
             service = OpenAIService(key, proxy=settings.api_proxy_url or None)
@@ -94,6 +111,9 @@ class Workflows(QObject):
                 service.close()
 
         def success(audio):
+            if recipient is not None and not current_recipient():
+                self.c.status("Text changed; discarded the outdated audio.")
+                return
             directory = self.c.store.data_dir / "speech"
             directory.mkdir(mode=0o700, exist_ok=True)
             fd, path = tempfile.mkstemp(suffix=".wav", prefix="speech-", dir=directory)
@@ -102,13 +122,28 @@ class Workflows(QObject):
             self.audio_files.append(Path(path))
             self.c.window.set_speech(path)
             self.c.remember("tts", text, "", settings.tts_model)
-            self._play(path)
+            if current_recipient():
+                recipient.set_audio(path)
+                self.c.status("Audio ready.")
+            elif recipient is None:
+                self._play(path)
 
         def done():
             self.speech_job = None
-            self.speech_active_changed.emit(self.player is not None)
+            if current_recipient():
+                recipient.set_generating(False)
+            self._inline_activity()
 
         self.speech_job = self.c.jobs.submit(work, success, self.c.fail, finished=done)
+
+    def _inline_activity(self, active=False):
+        if active and self.player and self.player.poll() is None:
+            self.player.terminate()
+            self.player = None
+            self.playback_timer.stop()
+        self.speech_active_changed.emit(
+            self.speech_job is not None or self.player is not None or audio_is_active()
+        )
 
     def replay(self, path):
         """Replay existing speech through the same player controlled by Stop."""
@@ -145,6 +180,7 @@ class Workflows(QObject):
             self.player.terminate()
         self.player = None
         self.playback_timer.stop()
+        stop_all_audio()
         self.speech_active_changed.emit(False)
 
     def cancel_import(self, mode):

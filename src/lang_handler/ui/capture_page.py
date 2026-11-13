@@ -4,10 +4,17 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QSplitter, QVBoxLayout, QWidget
 
 from .audio_activity import AudioActivity
-from .common import button, label, language_combo, language_value
+from .common import button, label, language_value
 from .continuous_pane import ContinuousPane
+from .dictation_entries import DictationEntries
 from .icons import icon, icon_button
-from .tool_settings import ToolSettings, ToolSettingsDialog
+from .language_selectors import (
+    replace_pane_heading,
+    select_language,
+    source_language_selector,
+    target_language_selector,
+)
+from .tool_settings import ToolSettings, ToolSettingsView
 
 
 class CapturePage(QWidget):
@@ -17,7 +24,9 @@ class CapturePage(QWidget):
     overlay_requested = Signal()
     options_changed = Signal(object)
     settings_saved = Signal(object)
+    settings_requested = Signal()
     speech_requested = Signal(str)
+    audio_requested = Signal(str, object)
 
     def __init__(self, mode, settings):
         super().__init__()
@@ -42,23 +51,20 @@ class CapturePage(QWidget):
         layout.addLayout(heading)
         self.tool_settings = ToolSettings(mode, settings)
         self.tool_settings.saved.connect(self.settings_saved)
-        self.settings_dialog = ToolSettingsDialog(self.tool_settings, "Dictation" if is_input else "Captions", self)
-        self.settings_button.clicked.connect(self.settings_dialog.show_settings)
-        controls = QHBoxLayout()
-        self.source_language = language_combo(getattr(settings, f"{mode}_language"))
-        self.source_language.setFixedWidth(180)
-        self.source_language.setAccessibleName("Spoken language")
+        self.settings_view = ToolSettingsView(self.tool_settings, "Dictation" if is_input else "Captions", self)
+        self.settings_button.clicked.connect(self.settings_requested)
+        self.source_language = source_language_selector(getattr(settings, f"{mode}_language"))
         self.source_language.currentIndexChanged.connect(
             lambda: self.options_changed.emit({f"{mode}_language": language_value(self.source_language)})
         )
-        controls.addWidget(self.source_language)
-        controls.addStretch()
         self.level = AudioActivity()
-        controls.addWidget(self.level)
-        layout.addLayout(controls)
-        self.results = ContinuousPane("Transcript", "Your words appear here.")
+        result_view = DictationEntries if is_input else ContinuousPane
+        self.results = result_view("Transcript", "Your words appear here.")
+        replace_pane_heading(self.results, self.source_language)
         self.results.speech_requested.connect(self.speech_requested)
+        self.results.audio_requested.connect(self.audio_requested)
         self.translations = None
+        self.target = None
         if is_input:
             layout.addWidget(self.results, 1)
         else:
@@ -66,29 +72,36 @@ class CapturePage(QWidget):
             self.splitter.setChildrenCollapsible(False)
             self.splitter.addWidget(self.results)
             self.translations = ContinuousPane(settings.target_language, "Translation appears here.")
+            self.target = target_language_selector(settings.target_language)
+            self.target.currentTextChanged.connect(
+                lambda value: self.options_changed.emit({"target_language": value})
+            )
+            replace_pane_heading(self.translations, self.target)
             self.translations.speech_requested.connect(self.speech_requested)
+            self.translations.audio_requested.connect(self.audio_requested)
             self.splitter.addWidget(self.translations)
             self.splitter.setSizes([450, 450])
             layout.addWidget(self.splitter, 1)
-        footer = QHBoxLayout()
+        actions = QHBoxLayout()
         self.import_button = button("Open audio…")
         self.import_button.setObjectName("quiet")
         self.import_button.setIcon(icon("file"))
         self.import_button.clicked.connect(self._import)
-        footer.addWidget(self.import_button)
+        actions.addWidget(self.import_button)
         self.clear_button = icon_button("clear", "Clear transcript")
         self.clear_button.clicked.connect(self.clear)
-        footer.addWidget(self.clear_button)
-        footer.addStretch()
+        actions.addWidget(self.clear_button)
+        actions.addStretch()
+        actions.addWidget(self.level)
         self.start_button = button("Start dictation" if is_input else "Start captions", True)
         self.start_button.clicked.connect(lambda: self.capture_requested.emit(self.chunked()))
         self.stop_button = button("Stop dictation" if is_input else "Stop captions", True)
         self.stop_button.clicked.connect(self.stop_requested)
         self.stop_button.hide()
         self.stop_button.setEnabled(False)
-        footer.addWidget(self.start_button)
-        footer.addWidget(self.stop_button)
-        layout.addLayout(footer)
+        heading.insertWidget(1, self.start_button)
+        heading.insertWidget(2, self.stop_button)
+        layout.insertLayout(1, actions)
         self.apply_settings(settings)
 
     def chunked(self):
@@ -120,11 +133,8 @@ class CapturePage(QWidget):
     def apply_settings(self, settings):
         self.settings = settings
         self.tool_settings.update_settings(settings)
-        self.source_language.blockSignals(True)
-        self.source_language.setCurrentIndex(max(0, self.source_language.findData(getattr(settings, f"{self.mode}_language"))))
-        self.source_language.blockSignals(False)
-        self.results.heading.setText(self.source_language.currentText() if self.mode == "output" else "Transcript")
+        select_language(self.source_language, getattr(settings, f"{self.mode}_language"), source=True)
         if self.translations:
             self.results.setVisible(settings.transcript_visible)
             self.translations.setVisible(settings.translation_visible)
-            self.translations.heading.setText(settings.target_language)
+            select_language(self.target, settings.target_language)

@@ -6,15 +6,15 @@ A Linux desktop app for dictation, live bilingual captions, translation, and tex
 
 | Tool | Behavior |
 | --- | --- |
-| Dictate | Record the microphone once and transcribe on Stop, or transcribe consecutive chunks. Copy, speak, or paste each result into the active application. |
+| Dictate | Record the microphone once and transcribe on Stop, or transcribe consecutive chunks. Each recognition appears separately, with Copy and Speak actions. Short sounds confirm recording start and end. |
 | Captions | Capture the default speaker output, including browser and media-player audio. Show one continuous transcript and translation side by side. New context can revise recent translations in place. |
-| Translate | Translate text and read the original or translated text aloud. Copy or speak either text. Replay and Save for the last audio are in Preferences → Shared speech. |
+| Translate | Translate text with pronunciation guides and optional “Did you mean?” suggestions. Choose Use to apply a correction and translate it. Original text stays unchanged otherwise. |
 | Draw | Draw with a mouse or tablet pen, in the main window or an always-on-top floating canvas. Recognize automatically or use Recognize, then copy or speak individual candidate readings. |
 | History | Search, browse, copy, or speak locally saved text; delete history from the app. |
 
-The sidebar keeps Dictate, Captions, Translate, and Draw one click away. Each tool page has a small **settings gear** opening a separate dialog for its model, language, instructions, and behavior. **Preferences** contains only the API connection, shared speech playback settings, and global shortcuts. Speech settings apply to every **Speak** button. Recognition instructions supply vocabulary/context to the speech model; they are not a general text-editing instruction.
+The sidebar keeps Dictate, Captions, Translate, and Draw one click away. Primary actions sit at the top of each page. Each tool’s **settings gear** opens its settings inside the app; **Back** returns to the tool. Source and target language selectors sit directly above their text panes; Draw has its language selector above the canvas. **Preferences** contains only the API connection, shared speech playback settings, and global shortcuts. Speech settings apply to every **Speak** button. Recognition instructions supply vocabulary/context to the speech model; they are not a general text-editing instruction.
 
-Dropdowns accept selections only and show at most eight scrollable rows in a menu no wider than 360 logical pixels, including at high display scaling. Use **Refresh models** in Connection to load model choices available to your account. Number fields support direct typing plus large **− / +** buttons; opacity is displayed as a percentage. Every option has a compact **Reset** icon with a tooltip. **Reset section** restores the current tool; **Save** applies its edits without discarding drafts in other tools. Global **Reset all** stages defaults for every tool; **Save preferences** applies them. Resetting preferences keeps the API key and history; the separate Remove key and Delete history actions control those.
+Dropdowns accept selections only and show at most eight scrollable rows in a menu no wider than 360 logical pixels, including at high display scaling. Use **Refresh models** in Connection to load model choices available to your account. Number fields support direct typing plus large **− / +** buttons; opacity is displayed as a percentage. Every option has a compact **Reset** icon with a tooltip. **Reset section** restores the current tool; **Save** applies its edits. **Discard changes** restores saved values; reopening a settings page also reloads saved values. Active drafts survive unrelated background updates. Global **Reset all** stages defaults for every tool; **Save preferences** applies them. Resetting preferences keeps the API key and history; the separate Remove key and Delete history actions control those.
 
 Floating windows contain content and actions only. Configure transcript/translation visibility, opacity, text size, and pinning under **Captions → settings gear**. Turning off **Show translation** also stops translation of new audio. Hiding the caption window does not stop capture; use **Stop**, the capture shortcut, or the tray menu.
 
@@ -42,7 +42,7 @@ Defaults: `gpt-transcribe` for speech recognition, `gpt-6-luna` for text transla
 
 ### Translation and pronunciation
 
-Translation returns three separate fields: translated text, a pronunciation guide for the original, and a pronunciation guide for the translation. Japanese uses romaji; other languages use appropriate romanization or IPA. Each guide can be selected or copied. The same guides accompany continuous captions and remain available in History. Select text before clicking Speak to read only that passage; otherwise Speak reads the pane. Speech requests are limited to 4,096 characters.
+Translation returns translated text, pronunciation guides for the original and translation, and an optional correction suggestion. Japanese uses romaji; other languages use appropriate romanization or IPA. Guides remain selectable for copying with the keyboard; the extra pronunciation copy buttons are omitted. The same guides accompany continuous captions and remain available in History. Select text before clicking Speak to read only that passage; otherwise Speak reads the pane. Speech requests are limited to 4,096 characters. Once audio is generated, its Speak button becomes an inline player with play/pause, seeking, and 0.5–2× playback speed. Replay and speed changes use the existing file without another API request. Editing the source text clears its outdated player. You can save the last generated WAV under Preferences → Shared speech.
 
 **Reasoning** offers Low, Medium, and High on Translate and Handwriting, with **Medium** as the default. The control is disabled for models without reasoning support. Caption translation shares its model, target language, instructions, and reasoning with Translate; edit these from either page.
 
@@ -96,6 +96,10 @@ The revision window contains the last six recognized segments, with about 6,000 
 - Chunk boundaries can split speech. Recent context lets translation correct earlier interpretations, but transcription itself stays faithful to the speech-recognition result. Longer chunks trade latency for more audio context.
 - Wayland sessions use native Qt Wayland so tablet input works throughout the interface. On GNOME, pinning uses the desktop's window menu and verifies its checked Always on Top state. This needs `ydotool` with an accessible user socket and system Python's GI/AT-SPI bindings (`python3-gi`, `gir1.2-atspi-2.0`). The helper targets only this app's active caption/handwriting window; it does not change global shortcuts or Shell settings. If pinning cannot be verified, the app reports the failure instead of claiming the window is pinned. X11 sessions use the normal keep-above window flag.
 - Speech playback also appears in system-output capture when both are enabled. Stop captions if you do not want generated speech transcribed.
+
+Copy buttons briefly show a checkmark when copying succeeds. Status and error messages appear as dismissible toasts without shifting the page.
+
+Custom instructions start empty. Settings show the app’s required instructions above the optional custom field, read-only and scrollable. Custom preferences can refine style or vocabulary while the app keeps its required task and output format.
 
 ## Storage and privacy
 

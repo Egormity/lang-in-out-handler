@@ -14,6 +14,7 @@ from .theme import STYLE
 class CaptionOverlay(QWidget):
     stop_requested = Signal()
     speech_requested = Signal(str)
+    audio_requested = Signal(str, object)
     speech_stop_requested = Signal()
 
     def __init__(self, settings):
@@ -53,6 +54,7 @@ class CaptionOverlay(QWidget):
         self.translation = ContinuousPane("Translation", "", compact=True)
         for pane in (self.transcript, self.translation):
             pane.speech_requested.connect(self.speech_requested)
+            pane.audio_requested.connect(self.audio_requested)
             self.splitter.addWidget(pane)
         self.splitter.setSizes([420, 420])
         layout.addWidget(self.splitter, 1)

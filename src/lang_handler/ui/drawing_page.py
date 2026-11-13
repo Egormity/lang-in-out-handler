@@ -3,19 +3,23 @@
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLayout, QScrollArea, QVBoxLayout, QWidget
 
-from .common import button, label
+from .common import button, label, language_value
 from .drawing_window import DrawingWindow
 from .drawing_workspace import DrawingWorkspace
 from .icons import icon, icon_button
-from .tool_settings import ToolSettings, ToolSettingsDialog
+from .language_selectors import select_language, source_language_selector
+from .tool_settings import ToolSettings, ToolSettingsView
 
 
 class DrawingPage(QWidget):
     requested = Signal(bytes, int)
     cancel_requested = Signal()
     speech_requested = Signal(str)
+    audio_requested = Signal(str, object)
     speech_stop_requested = Signal()
     settings_saved = Signal(object)
+    settings_requested = Signal()
+    options_changed = Signal(object)
 
     def __init__(self, settings):
         super().__init__()
@@ -37,6 +41,13 @@ class DrawingPage(QWidget):
         title = label("Draw")
         title.setObjectName("title")
         heading.addWidget(title, 1)
+        self.language = source_language_selector(settings.drawing_language)
+        self.language.setAccessibleName("Handwriting language")
+        self.language.setToolTip("Choose the written language, or detect it automatically.")
+        self.language.currentIndexChanged.connect(
+            lambda: self.options_changed.emit({"drawing_language": language_value(self.language)})
+        )
+        heading.addWidget(self.language)
         self.float_button = button("Float")
         self.float_button.setObjectName("quiet")
         self.float_button.setIcon(icon("float"))
@@ -47,8 +58,8 @@ class DrawingPage(QWidget):
         layout.addLayout(heading)
         self.tool_settings = ToolSettings("drawing", settings)
         self.tool_settings.saved.connect(self.settings_saved)
-        self.settings_dialog = ToolSettingsDialog(self.tool_settings, "Handwriting", self)
-        self.settings_button.clicked.connect(self.settings_dialog.show_settings)
+        self.settings_view = ToolSettingsView(self.tool_settings, "Handwriting", self)
+        self.settings_button.clicked.connect(self.settings_requested)
         self.workspace = DrawingWorkspace(settings)
         # Keep a single set of public controls for the existing controller interface.
         for name in (
@@ -63,6 +74,7 @@ class DrawingPage(QWidget):
             setattr(self, name, getattr(self.workspace, name))
         layout.addWidget(self.workspace, 1)
         self.result.speech_requested.connect(self.speech_requested)
+        self.result.audio_requested.connect(self.audio_requested)
         self.result.speech_stop_requested.connect(self.speech_stop_requested)
         self.floating = DrawingWindow(settings.drawing_on_top)
         self.floating.dock_requested.connect(self.dock_workspace)
@@ -175,12 +187,19 @@ class DrawingPage(QWidget):
     def update_settings(self, settings):
         was_enabled = self.settings.drawing_auto_send
         delay_changed = self.settings.drawing_debounce_ms != settings.drawing_debounce_ms
+        language_changed = self.settings.drawing_language != settings.drawing_language
         self.settings = settings
         self.tool_settings.update_settings(settings)
+        select_language(self.language, settings.drawing_language, source=True)
         self.canvas.pen_width = settings.drawing_pen_width
         self.canvas.set_theme(settings.drawing_canvas_theme)
         if self.floating.pin_control.desired != settings.drawing_on_top:
             self.floating.pin_control.request(settings.drawing_on_top)
+        if language_changed:
+            self.timer.stop()
+            self.cancel_requested.emit()
+            self.result.clear()
+            self._schedule()
         if was_enabled and not settings.drawing_auto_send:
             self.timer.stop()
             self.cancel_requested.emit()

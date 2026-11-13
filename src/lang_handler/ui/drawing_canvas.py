@@ -34,7 +34,6 @@ class DrawingCanvas(TabletInputMixin, QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setCursor(Qt.CursorShape.CrossCursor)
         self.setAccessibleName("Handwriting canvas")
-        self.setToolTip("Draw with your mouse or pen. Ctrl+Z undoes; Ctrl+Shift+Z redoes.")
 
     @property
     def is_blank(self):

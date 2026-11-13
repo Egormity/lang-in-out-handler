@@ -17,7 +17,7 @@ def test_caption_visibility_and_pin_only_change_through_preferences(qtbot):
     qtbot.addWidget(overlay)
     overlay.show()
     assert not overlay.findChildren(QCheckBox)
-    assert not overlay.findChildren(QComboBox)
+    assert all(combo.objectName() == "audioSpeed" for combo in overlay.findChildren(QComboBox))
     assert not overlay.findChildren(QSpinBox)
     assert overlay.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
     overlay.update_settings(replace(settings, transcript_visible=False, translation_visible=False))

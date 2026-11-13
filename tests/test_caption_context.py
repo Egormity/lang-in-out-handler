@@ -38,7 +38,8 @@ def test_contextual_api_returns_revisions_in_source_order_and_keeps_source_autho
     assert request["store"] is False
     assert request["reasoning"] == {"effort": "high"}
     assert "revise" in request["instructions"]
-    assert "Keep names." in request["instructions"]
+    assert "Keep names." not in request["instructions"]
+    assert json.loads(request["input"])["custom_instructions"] == "Keep names."
     assert json.loads(request["input"])["segments"] == [
         {"segment_id": -1, "text": "はし"}, {"segment_id": -2, "text": "を渡る"}
     ]

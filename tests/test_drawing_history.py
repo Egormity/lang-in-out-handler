@@ -152,7 +152,7 @@ def test_drawing_shortcuts_leave_settings_and_translation_text_undo_alone(qtbot)
     draw(page.canvas)
     expected = deepcopy(page.canvas.strokes)
     try:
-        page.settings_dialog.show_settings()
+        window.show_tool_settings("drawing")
         editor = page.tool_settings.instructions["drawing_instructions"]
         editor.setPlainText("Original")
         editor.moveCursor(QTextCursor.MoveOperation.End)
@@ -164,7 +164,6 @@ def test_drawing_shortcuts_leave_settings_and_translation_text_undo_alone(qtbot)
         redo(qtbot, editor)
         assert editor.toPlainText() == "Original changed"
         assert page.canvas.strokes == expected
-        page.settings_dialog.close()
         window.show_page("translate")
         window.activateWindow()
         editor = window.pages["translate"].source.text
@@ -177,7 +176,7 @@ def test_drawing_shortcuts_leave_settings_and_translation_text_undo_alone(qtbot)
         assert editor.toPlainText() == "Text"
         assert page.canvas.strokes == expected
     finally:
-        page.settings_dialog.close()
+        window.show_page("drawing")
         page.shutdown()
 
 

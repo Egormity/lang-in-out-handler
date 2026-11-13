@@ -75,6 +75,7 @@ class AudioCapture(QObject):
     chunk = Signal(bytes)
     level = Signal(float)
     error = Signal(str)
+    started = Signal()
     stopped = Signal()
 
     def __init__(self, parent: QObject | None = None):
@@ -122,6 +123,7 @@ class AudioCapture(QObject):
         buffer = bytearray()
         target = int(seconds * BYTES_PER_SECOND) // 2 * 2
         process = None
+        started = False
         try:
             with tempfile.TemporaryFile() as errors:
                 process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors)
@@ -139,6 +141,9 @@ class AudioCapture(QObject):
                         data = os.read(process.stdout.fileno(), 16_384)
                         if not data:
                             break
+                        if not started:
+                            started = True
+                            self.started.emit()
                         self.level.emit(min(1.0, rms(data)))
                         buffer.extend(data)
                         if chunked:

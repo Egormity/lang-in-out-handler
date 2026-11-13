@@ -1,13 +1,12 @@
 """Scoped, draft-preserving settings editor embedded in a tool page."""
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QDialog, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
 from . import tool_setting_sections
 from .common import button, label
 from .model_choices import update_model_choices
 from .preference_controls import PreferenceFields
-from .theme import STYLE
 
 
 class ToolSettings(QWidget):
@@ -40,8 +39,11 @@ class ToolSettings(QWidget):
         self.save_hint = label("", True)
         self.save_button = button("Save", True)
         self.save_button.clicked.connect(lambda: self.saved.emit(self.collect()))
+        self.discard_button = button("Discard changes")
+        self.discard_button.clicked.connect(self.discard_changes)
         actions.addWidget(self.reset_button)
         actions.addWidget(self.save_hint, 1)
+        actions.addWidget(self.discard_button)
         actions.addWidget(self.save_button)
         layout.addWidget(self.actions)
         self.update_settings(settings)
@@ -63,6 +65,12 @@ class ToolSettings(QWidget):
         self.fields.reset_all()
         self.save_hint.setText("Defaults restored. Save to apply.")
 
+    def discard_changes(self):
+        self.fields.discard_changes()
+        if self.mode == "drawing":
+            self.drawing_delay.setEnabled(self.drawing_auto_send.isChecked())
+        self.save_hint.setText("")
+
     def set_models(self, model_ids):
         update_model_choices(self.models, model_ids)
 
@@ -73,36 +81,37 @@ class ToolSettings(QWidget):
                 widget.set_sources(sources)
 
 
-class ToolSettingsDialog(QDialog):
-    """Persistent, nonmodal editor for one tool; closing never discards drafts."""
+class ToolSettingsView(QWidget):
+    """A settings page inside the workbench, with fixed actions above its scroll area."""
+
+    back_requested = Signal()
 
     def __init__(self, panel, title, parent=None):
         super().__init__(parent)
         self.panel = panel
         heading_text = title if title.casefold().endswith("settings") else f"{title} settings"
-        self.setWindowTitle(f"{heading_text} — Lang In/Out")
-        self.setModal(False)
-        self.setMinimumWidth(440)
-        self.resize(600, 620)
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(20, 16, 20, 16)
+        outer.setContentsMargins(28, 24, 28, 20)
         outer.setSpacing(14)
-        heading = label(heading_text)
-        heading.setObjectName("settingsTitle")
-        outer.addWidget(heading)
+        heading = QHBoxLayout()
+        self.back_button = button("Back")
+        self.back_button.setObjectName("quiet")
+        self.back_button.setAccessibleName(f"Back to {title.lower()}")
+        self.back_button.clicked.connect(self.back_requested)
+        heading.addWidget(self.back_button)
+        self.title = label(heading_text)
+        self.title.setObjectName("title")
+        heading.addWidget(self.title, 1)
+        outer.addLayout(heading)
+        panel.layout().removeWidget(panel.actions)
+        outer.addWidget(panel.actions)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll.setWidget(panel)
         outer.addWidget(self.scroll, 1)
-        # Keep Save and reset visible even when the form needs scrolling.
-        panel.layout().removeWidget(panel.actions)
-        outer.addWidget(panel.actions)
-        self.setStyleSheet(STYLE)
+        self.hide()
 
-    def show_settings(self):
-        available = self.screen().availableGeometry()
-        self.resize(min(600, available.width() - 40), min(680, available.height() - 80))
-        self.show()
-        self.raise_()
-        self.activateWindow()
+    def begin_edit(self):
+        self.panel.discard_changes()
+        self.scroll.verticalScrollBar().setValue(0)

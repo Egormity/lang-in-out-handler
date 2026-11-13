@@ -4,7 +4,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QTabWidget, QVBoxLayout, QWidget
 
 from . import preference_sections
-from .common import button, label, title_block
+from .common import button, label
 from .model_choices import update_model_choices
 from .preference_controls import PreferenceFields
 from .sections import scrollable_body
@@ -13,6 +13,7 @@ from .sections import scrollable_body
 class PreferencesPage(QWidget):
     saved = Signal(object)
     reset_all_requested = Signal()
+    discard_requested = Signal()
     key_saved = Signal(str)
     key_test_requested = Signal(str)
     models_requested = Signal(str)
@@ -26,7 +27,11 @@ class PreferencesPage(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(28, 24, 28, 20)
         outer.setSpacing(16)
-        outer.addWidget(title_block("Preferences", ""))
+        heading = QHBoxLayout()
+        title = label("Preferences")
+        title.setObjectName("title")
+        heading.addWidget(title)
+        outer.addLayout(heading)
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self.tabs.tabBar().setDrawBase(False)
@@ -39,19 +44,20 @@ class PreferencesPage(QWidget):
         ]:
             self.tabs.addTab(builder(self, settings), title)
         outer.addWidget(self.tabs, 1)
-        row = QHBoxLayout()
         self.reset_all_button = button("Reset all")
         self.reset_all_button.setToolTip(
             "Restore all preference defaults. Save to apply; your API key is kept."
         )
         self.reset_all_button.clicked.connect(self.reset_all)
-        row.addWidget(self.reset_all_button)
         self.save_hint = label("", True)
-        row.addWidget(self.save_hint, 1)
+        heading.addWidget(self.save_hint, 1)
+        heading.addWidget(self.reset_all_button)
+        self.discard_button = button("Discard changes")
+        self.discard_button.clicked.connect(self.discard_changes)
+        heading.addWidget(self.discard_button)
         self.save_preferences = button("Save", True)
         self.save_preferences.clicked.connect(lambda: self.saved.emit(self.collect()))
-        row.addWidget(self.save_preferences)
-        outer.addLayout(row)
+        heading.addWidget(self.save_preferences)
         self.update_settings(settings)
 
     def _connection(self, settings, api_key_present):
@@ -126,6 +132,12 @@ class PreferencesPage(QWidget):
         self.fields.reset_all()
         self.save_hint.setText("All defaults restored. Save to apply.")
         self.reset_all_requested.emit()
+
+    def discard_changes(self):
+        self.fields.discard_changes()
+        self.api_key.clear()
+        self.save_hint.setText("")
+        self.discard_requested.emit()
 
     def set_models(self, model_ids):
         update_model_choices(self.models, model_ids)

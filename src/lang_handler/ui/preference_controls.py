@@ -136,6 +136,11 @@ class PreferenceFields:
         for key in self.fields:
             self.reset(key)
 
+    def discard_changes(self):
+        """Restore the latest committed values, including updates received while editing."""
+        for key, value in self.committed.items():
+            self.fields[key].write(deepcopy(value))
+
     def update(self, settings):
         # External quick controls and shortcut actions update saved preferences too.
         # Keep edits made in this form until Save while refreshing untouched fields.

@@ -53,6 +53,44 @@ def test_nonlinguistic_text_can_return_empty_pronunciation():
     assert service.translate("!", "gpt-6-luna", "English") == TranslationResult("!")
 
 
+def test_correction_remains_a_suggestion_and_preserves_original_translation():
+    service, client = service_result(json.dumps({
+        "translation": "This is a kitteh.",
+        "source_pronunciation": "Kore wa nuko desu.",
+        "translation_pronunciation": "/ðɪs ɪz ə ˈkɪti/",
+        "source_correction": " これはねこです。 ",
+    }))
+    result = service.translate("これはぬこです。", "gpt-6-luna", "English")
+    assert result.translation == "This is a kitteh."
+    assert result.source_pronunciation == "Kore wa nuko desu."
+    assert result.source_correction == "これはねこです。"
+    assert client.responses.create.call_count == 1
+    assert json.loads(client.responses.create.call_args.kwargs["input"])["source_text"] == "これはぬこです。"
+
+
+@pytest.mark.parametrize("correction", ["", " こんにちは。 "])
+def test_empty_or_unchanged_correction_has_no_suggestion(correction):
+    service, _ = service_result(json.dumps({
+        "translation": "Hello.",
+        "source_pronunciation": "Konnichiwa.",
+        "translation_pronunciation": "/həˈloʊ/",
+        "source_correction": correction,
+    }))
+    assert service.translate("こんにちは。", "gpt-6-luna", "English").source_correction == ""
+
+
+@pytest.mark.parametrize("correction", [None, 12, [], {}])
+def test_invalid_correction_is_rejected(correction):
+    service, _ = service_result(json.dumps({
+        "translation": "Hello.",
+        "source_pronunciation": "Konnichiwa.",
+        "translation_pronunciation": "/həˈloʊ/",
+        "source_correction": correction,
+    }))
+    with pytest.raises(ServiceError, match="invalid translation result"):
+        service.translate("こんにちは。", "gpt-6-luna", "English")
+
+
 def test_empty_text_and_missing_target_do_not_spend_api_credit():
     service, client = service_result("unused")
     assert service.translate("  ", "gpt-6-luna", "English") == TranslationResult("")

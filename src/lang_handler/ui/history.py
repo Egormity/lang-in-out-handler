@@ -26,6 +26,7 @@ class HistoryPage(QWidget):
     refresh_requested = Signal()
     delete_requested = Signal()
     speech_requested = Signal(str)
+    audio_requested = Signal(str, object)
 
     def __init__(self):
         super().__init__()
@@ -34,11 +35,20 @@ class HistoryPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 20)
         layout.setSpacing(14)
-        layout.addWidget(
+        heading = QHBoxLayout()
+        heading.addWidget(
             title_block(
                 "History", "Revisit your transcripts and translations, stored on this computer."
-            )
+            ), 1
         )
+        self.refresh_button = button("Refresh")
+        self.delete_button = button("Delete all history")
+        self.delete_button.setObjectName("danger")
+        self.refresh_button.clicked.connect(self.refresh_requested)
+        self.delete_button.clicked.connect(self._delete)
+        heading.addWidget(self.refresh_button)
+        heading.addWidget(self.delete_button)
+        layout.addLayout(heading)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search saved text…")
         self.search.textChanged.connect(self._render)
@@ -63,22 +73,14 @@ class HistoryPage(QWidget):
         self.translation = TextPane("Translation", "This entry has no translation.")
         for pane in (self.detail, self.translation):
             pane.speech_requested.connect(self.speech_requested)
+            pane.audio_requested.connect(self.audio_requested)
             self.details.addWidget(pane)
         self.details.setSizes([450, 450])
         self.translation.hide()
         layout.addWidget(self.details, 1)
-        row = QHBoxLayout()
-        row.addWidget(
-            label("Audio files and API credentials are not included in this history.", True), 1
+        layout.addWidget(
+            label("Audio files and API credentials are not included in this history.", True)
         )
-        refresh = button("Refresh")
-        clear = button("Delete all history")
-        clear.setObjectName("danger")
-        refresh.clicked.connect(self.refresh_requested)
-        clear.clicked.connect(self._delete)
-        row.addWidget(refresh)
-        row.addWidget(clear)
-        layout.addLayout(row)
 
     def set_entries(self, entries):
         self.entries = entries
@@ -124,9 +126,12 @@ class HistoryPage(QWidget):
         row = self.table.currentRow()
         if 0 <= row < len(self.visible_entries):
             entry = self.visible_entries[row]
-            self.detail.text.setPlainText(entry.get("source_text", ""))
+            source = entry.get("source_text", "")
+            if self.detail.text.toPlainText() != source:
+                self.detail.text.setPlainText(source)
             translation = entry.get("translated_text", "")
-            self.translation.text.setPlainText(translation)
+            if self.translation.text.toPlainText() != translation:
+                self.translation.text.setPlainText(translation)
             self.translation.setVisible(bool(translation))
             self.detail.set_pronunciation(entry.get("source_pronunciation", ""))
             self.translation.set_pronunciation(entry.get("translation_pronunciation", ""))

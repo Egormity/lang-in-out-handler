@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lang-in-out-handler"
-version = "0.5.2"
+version = "0.6.0"
 description = "A Linux language workbench for OpenAI dictation, live captions, translation, and speech."
 requires-python = ">=3.12"
 dependencies = [

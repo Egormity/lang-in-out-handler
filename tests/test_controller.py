@@ -17,6 +17,7 @@ from lang_handler.ui.overlay import CaptionOverlay
 
 
 class FakeCapture(QObject):
+    started = Signal()
     chunk = Signal(bytes)
     error = Signal(str)
     stopped = Signal()
@@ -30,6 +31,7 @@ class FakeCapture(QObject):
     def start(self, source, chunked, chunk_seconds):
         self.source = source
         self.is_running = True
+        self.started.emit()
 
     def stop(self):
         self.is_running = False
@@ -112,6 +114,8 @@ def controller(qapp, qtbot, tmp_path, monkeypatch):
 
             monkeypatch.setattr(widget, name, checked)
     controller = Controller(window, overlay, store, FakeCredentials())
+    for effect in controller.recording_cues.effects.values():
+        effect.setVolume(0)
     yield controller
     controller.shutdown()
     assert controller.jobs.pool.waitForDone(4000)

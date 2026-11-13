@@ -2,7 +2,6 @@
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QApplication,
     QComboBox,
     QHBoxLayout,
     QLabel,
@@ -12,8 +11,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .copy_button import CopyButton
 from .dropdown import CompactComboBox
-from .icons import icon_button
+from .inline_audio import InlineAudio
 from .text_edit import GrowingTextEdit
 
 
@@ -122,6 +122,7 @@ def language_value(widget: QComboBox) -> str:
 
 class TextPane(QWidget):
     speech_requested = Signal(str)
+    audio_requested = Signal(str, object)
 
     def __init__(self, title: str, placeholder: str, read_only: bool = True):
         super().__init__()
@@ -138,6 +139,7 @@ class TextPane(QWidget):
         body = QWidget()
         body.setObjectName("textBody")
         content = QVBoxLayout(body)
+        self.content_layout = content
         content.setContentsMargins(0, 0, 0, 0)
         content.setSpacing(0)
         self.text = GrowingTextEdit(minimum=58)
@@ -158,21 +160,34 @@ class TextPane(QWidget):
         self.actions = QHBoxLayout()
         self.actions.setSpacing(4)
         self.actions.addStretch()
-        self.copy = icon_button("copy", f"Copy {title.lower()}")
-        self.speak = icon_button("speak", f"Speak {title.lower()}")
+        self.copy = CopyButton(f"Copy {title.lower()}", self.text.toPlainText)
+        self.audio = InlineAudio()
+        self.speak = self.audio.speak
+        self.speak.setAccessibleName(f"Speak {title.lower()}")
         self.speak.setToolTip("Read selected text, or the whole pane.")
         self.copy.setEnabled(False)
         self.speak.setEnabled(False)
-        self.copy.clicked.connect(lambda: QApplication.clipboard().setText(self.text.toPlainText()))
-        self.speak.clicked.connect(lambda: self.speech_requested.emit(self.text.textCursor().selectedText().replace("\u2029", "\n") or self.text.toPlainText()))
+        self.audio.requested.connect(self._request_audio)
         self.text.textChanged.connect(self._changed)
         self.actions.addWidget(self.copy)
-        self.actions.addWidget(self.speak)
+        self.actions.addWidget(self.audio)
         layout.addLayout(self.actions)
+        self._audio_text = ""
+
+    def _request_audio(self):
+        text = (self.text.textCursor().selectedText().replace("\u2029", "\n")
+                or self.text.toPlainText())
+        self.speech_requested.emit(text)
+        self.audio_requested.emit(text, self.audio)
 
     def _changed(self):
-        has_text = bool(self.text.toPlainText().strip())
+        text = self.text.toPlainText()
+        if text != self._audio_text:
+            self.audio.reset()
+            self._audio_text = text
+        has_text = bool(text.strip())
         self.copy.setEnabled(has_text)
+        self.copy.reset_feedback()
         self.speak.setEnabled(has_text)
         self.pronunciation.set_text("")
 
