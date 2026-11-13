@@ -90,11 +90,11 @@ class PreferencesPage(QWidget):
         self.api_key.textChanged.connect(self._update_key_actions)
         form = preference_sections.group("Network", layout)
         self.api_proxy_url = QLineEdit(settings.api_proxy_url)
-        self.api_proxy_url.setPlaceholderText("Use environment proxy (or direct if unset)")
+        self.api_proxy_url.setPlaceholderText("Automatic — use environment or system proxy")
         self.api_proxy_url.setToolTip(
-            "Supports HTTP, HTTPS, and SOCKS proxy URLs. Leave empty to use the environment proxy, or connect directly when none is configured."
+            "Optional override. Leave empty to use your environment proxy or GNOME system proxy automatically. Supports HTTP, HTTPS, and SOCKS5 URLs."
         )
-        self.fields.add(form, "Proxy URL", "api_proxy_url", self.api_proxy_url)
+        self.fields.add(form, "Proxy override", "api_proxy_url", self.api_proxy_url)
         form.addRow(
             label(
                 "Test connection checks the key and proxy entered here. API usage is billed to your OpenAI account.",

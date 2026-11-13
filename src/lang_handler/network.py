@@ -1,19 +1,25 @@
-"""Use a saved or environment proxy without mutating the desktop environment."""
+"""Resolve an optional override, environment, or desktop proxy for every transport."""
 
 import os
 from urllib.parse import unquote, urlsplit
+from urllib.request import proxy_bypass_environment
 
 from .errors import ServiceError
+from .system_proxy import OPENAI_PROXY_TARGET, desktop_proxy
 
 
 def proxy_url(explicit: str | None = None) -> str | None:
-    value = (
-        (explicit.strip() if explicit else "")
-        or os.environ.get("https_proxy")
-        or os.environ.get("HTTPS_PROXY")
-        or os.environ.get("all_proxy")
-        or os.environ.get("ALL_PROXY")
-    )
+    value = explicit.strip() if explicit else ""
+    if not value:
+        value = next((os.environ[name].strip() for name in (
+            "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"
+        ) if os.environ.get(name, "").strip()), "")
+        if value:
+            bypass = os.environ.get("no_proxy", os.environ.get("NO_PROXY", ""))
+            if proxy_bypass_environment(urlsplit(OPENAI_PROXY_TARGET).netloc, {"no": bypass}):
+                return None
+        else:
+            value = desktop_proxy()
     if value:
         value = value.strip()
     if value and value.lower().startswith("socks://"):
@@ -47,6 +53,9 @@ def websocket_proxy(explicit: str | None = None) -> dict:
         "http_proxy_port": parsed.port
         or (1080 if parsed.scheme.startswith("socks") else 443 if parsed.scheme == "https" else 80),
         "proxy_type": kind,
+        # Routing was already resolved above. Do not let websocket-client apply
+        # inherited NO_PROXY again and silently disagree with the HTTP client.
+        "http_no_proxy": ["__lang_handler_no_bypass__"],
     }
     if parsed.username is not None:
         options["http_proxy_auth"] = (unquote(parsed.username), unquote(parsed.password or ""))
