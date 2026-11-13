@@ -146,9 +146,6 @@ class MainWindow(QMainWindow):
             page = self.pages[mode]
             page.capture_requested.connect(lambda chunked, key=mode: self._capture(key, chunked))
             page.stop_requested.connect(lambda key=mode: self.stop_requested.emit(key))
-            page.file_requested.connect(
-                lambda path, chunked, key=mode: self._file(key, path, chunked)
-            )
             page.options_changed.connect(self._apply_settings_patch)
             page.audio_requested.connect(self.audio_requested)
         self.pages["output"].overlay_requested.connect(self.overlay_requested)
@@ -197,10 +194,6 @@ class MainWindow(QMainWindow):
     def _capture(self, mode, chunked):
         self.sync_mode_settings()
         self.capture_requested.emit(mode, chunked)
-
-    def _file(self, mode, path, chunked):
-        self.sync_mode_settings()
-        self.file_requested.emit(mode, path, chunked)
 
     def _translate(self, text):
         self.sync_mode_settings()

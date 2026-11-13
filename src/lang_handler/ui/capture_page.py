@@ -1,7 +1,7 @@
 """Minimal dictation and continuous-caption workspaces."""
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QSplitter, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QSplitter, QVBoxLayout, QWidget
 
 from .audio_activity import AudioActivity
 from .common import button, label, language_value
@@ -20,7 +20,6 @@ from .tool_settings import ToolSettings, ToolSettingsView
 class CapturePage(QWidget):
     capture_requested = Signal(bool)
     stop_requested = Signal()
-    file_requested = Signal(str, bool)
     overlay_requested = Signal()
     options_changed = Signal(object)
     settings_saved = Signal(object)
@@ -83,11 +82,6 @@ class CapturePage(QWidget):
             self.splitter.setSizes([450, 450])
             layout.addWidget(self.splitter, 1)
         actions = QHBoxLayout()
-        self.import_button = button("Open audio…")
-        self.import_button.setObjectName("quiet")
-        self.import_button.setIcon(icon("file"))
-        self.import_button.clicked.connect(self._import)
-        actions.addWidget(self.import_button)
         self.clear_button = icon_button("clear", "Clear transcript")
         self.clear_button.clicked.connect(self.clear)
         actions.addWidget(self.clear_button)
@@ -107,21 +101,12 @@ class CapturePage(QWidget):
     def chunked(self):
         return getattr(self.settings, f"{self.mode}_chunked")
 
-    def _import(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Transcribe audio", "",
-            "Audio / video (*.wav *.mp3 *.m4a *.ogg *.flac *.webm *.mp4 *.mpeg);;All files (*)",
-        )
-        if path:
-            self.file_requested.emit(path, self.chunked())
-
     def set_recording(self, active):
         self.recording = active
         self.start_button.setVisible(not active)
         self.start_button.setEnabled(not active)
         self.stop_button.setVisible(active)
         self.stop_button.setEnabled(active)
-        self.import_button.setEnabled(not active)
         self.source_language.setEnabled(not active)
         self.level.set_recording(active)
 

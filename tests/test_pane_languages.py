@@ -43,7 +43,6 @@ def test_caption_language_controls_replace_headings_and_stay_compact(qtbot):
         page.target.itemText(i) for i in range(page.target.count())
     ]
     assert page.start_button.mapTo(page, QPoint()).y() < page.splitter.y()
-    assert page.import_button.mapTo(page, QPoint()).y() < page.splitter.y()
 
 
 def test_header_choices_save_scoped_changes_and_reload_across_pages(qtbot, tmp_path):
