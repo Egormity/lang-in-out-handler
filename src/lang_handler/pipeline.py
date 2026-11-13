@@ -79,11 +79,17 @@ class CaptionPipeline(QObject):
         self.untranslated.clear()
         self.context_signature = signature
 
-    def _notify(self, mode):
+    def pending_count(self, mode):
         pending = len(self.queues[mode]) + int(self.busy[mode])
         if mode == "output":
-            pending += len(self.untranslated)
-        self.pending_changed.emit(mode, pending)
+            pending += max(
+                len(self.untranslated),
+                len(self.queues["translation"]) + int(self.busy["translation"]),
+            )
+        return pending
+
+    def _notify(self, mode):
+        self.pending_changed.emit(mode, self.pending_count(mode))
 
     def _start(self, mode):
         if self.closed or self.busy[mode] or not self.queues[mode]:

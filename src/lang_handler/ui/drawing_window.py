@@ -1,7 +1,7 @@
 """An independent, pinnable host for the shared handwriting editor."""
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from ..window_pin import WindowPin
 from .icons import icon_button
@@ -16,43 +16,49 @@ class DrawingWindow(QWidget):
         self.setWindowTitle("Lang In/Out · Handwriting")
         self.setWindowFlags(Qt.WindowType.Tool)
         self.setStyleSheet(STYLE)
-        self.resize(650, 530)
-        self.setMinimumSize(440, 440)
+        self.resize(650, 420)
+        self.setMinimumSize(440, 260)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 12)
-        layout.setSpacing(8)
-        toolbar = QHBoxLayout()
-        title = QLabel("Draw")
-        title.setObjectName("section")
-        toolbar.addWidget(title)
-        toolbar.addStretch()
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(4)
+        self.workspace = None
+        self.scroll = None
         self.dock_button = icon_button("dock", "Dock canvas")
         self.dock_button.setObjectName("quiet")
         self.dock_button.clicked.connect(self.dock_requested)
+        self.dock_button.hide()
         self.hide_button = icon_button("close", "Hide canvas")
         self.hide_button.setObjectName("quiet")
         self.hide_button.clicked.connect(self.hide)
-        toolbar.addWidget(self.dock_button)
-        toolbar.addWidget(self.hide_button)
-        layout.addLayout(toolbar)
+        self.hide_button.hide()
         self.pin_status = QLabel()
         self.pin_status.setObjectName("muted")
         self.pin_status.setWordWrap(True)
         self.pin_status.hide()
         layout.addWidget(self.pin_status)
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        layout.addWidget(self.scroll, 1)
         self.pin_control = WindowPin(self, on_top)
         self.pin_control.message.connect(self._pin_message)
         self.pin_control.request(on_top)
 
     def set_workspace(self, workspace):
-        self.scroll.setWidget(workspace)
+        self.workspace = workspace
+        self.scroll = workspace.scroll
+        self.layout().insertWidget(0, workspace, 1)
+        workspace.set_floating(True, (self.dock_button, self.hide_button))
         workspace.show()
 
     def take_workspace(self):
-        return self.scroll.takeWidget()
+        workspace = self.workspace
+        if workspace is not None:
+            self.layout().removeWidget(workspace)
+            workspace.set_floating(False)
+            for control in (self.dock_button, self.hide_button):
+                control.setParent(self)
+                control.hide()
+            workspace.setParent(None)
+        self.workspace = None
+        self.scroll = None
+        return workspace
 
     def show_workspace(self):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)

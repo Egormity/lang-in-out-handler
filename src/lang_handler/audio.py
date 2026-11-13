@@ -81,12 +81,13 @@ class AudioCapture(QObject):
     def __init__(self, parent: QObject | None = None):
         super().__init__(parent)
         self._stop = threading.Event()
+        self._running = threading.Event()
         self._thread: threading.Thread | None = None
         self._process: subprocess.Popen | None = None
 
     @property
     def is_running(self) -> bool:
-        return self._thread is not None and self._thread.is_alive()
+        return self._running.is_set()
 
     def start(self, source: str = "", chunked: bool = True, chunk_seconds: float = 5.0):
         if self.is_running:
@@ -101,7 +102,13 @@ class AudioCapture(QObject):
             daemon=True,
             name="lang-in-out-capture",
         )
-        self._thread.start()
+        self._running.set()
+        try:
+            self._thread.start()
+        except RuntimeError:
+            self._running.clear()
+            self._thread = None
+            raise
 
     def stop(self):
         self._stop.set()
@@ -177,14 +184,19 @@ class AudioCapture(QObject):
         except (OSError, RuntimeError) as exc:
             self.error.emit(f"Audio capture failed: {exc}")
         finally:
-            if process and process.poll() is None:
-                process.kill()
-                process.wait(timeout=2)
-            if process and process.stdout:
-                process.stdout.close()
-            self._process = None
-            self.level.emit(0.0)
-            self.stopped.emit()
+            try:
+                if process and process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=2)
+                if process and process.stdout:
+                    process.stdout.close()
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                self.error.emit(f"Audio capture cleanup failed: {exc}")
+            finally:
+                self._process = None
+                self._running.clear()
+                self.level.emit(0.0)
+                self.stopped.emit()
 
 
 __all__ = ["AudioCapture", "audio_file_chunks", "enumerate_sources", "pcm_to_wav", "rms"]

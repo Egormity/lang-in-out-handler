@@ -4,6 +4,7 @@ import wave
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import Qt
 
 from lang_handler import audio
 from lang_handler.audio_files import audio_file_chunks
@@ -67,6 +68,20 @@ def test_silent_chunks_are_consumed_without_submission(qtbot, monkeypatch):
         capture.start(chunked=True, chunk_seconds=2)
     assert received == []
     capture.wait()
+
+
+def test_stopped_signal_observes_capture_inactive_before_worker_returns(qtbot, monkeypatch):
+    fake_command(monkeypatch, b"")
+    capture = audio.AudioCapture()
+    running_at_stop = []
+    capture.stopped.connect(
+        lambda: running_at_stop.append((capture.is_running, capture._thread.is_alive())),
+        Qt.ConnectionType.DirectConnection,
+    )
+    with qtbot.waitSignal(capture.stopped, timeout=3000):
+        capture.start()
+    capture.wait()
+    assert running_at_stop == [(False, True)]
 
 
 def test_stop_flushes_partial_audio_and_terminates_capture(qtbot, monkeypatch):

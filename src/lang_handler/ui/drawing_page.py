@@ -1,7 +1,7 @@
 """Debounced handwriting recognition controls; API work stays in the controller."""
 
 from PySide6.QtCore import QTimer, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLayout, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from .common import button, label, language_value
 from .drawing_window import DrawingWindow
@@ -26,18 +26,10 @@ class DrawingPage(QWidget):
         super().__init__()
         self.settings = settings
         self.busy = False
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        body = QWidget()
-        layout = QVBoxLayout(body)
+        layout = QVBoxLayout(self)
         self.body_layout = layout
-        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         layout.setContentsMargins(28, 24, 28, 20)
         layout.setSpacing(10)
-        self.scroll.setWidget(body)
-        outer.addWidget(self.scroll)
         heading = QHBoxLayout()
         title = label("Draw")
         title.setObjectName("title")
@@ -63,6 +55,7 @@ class DrawingPage(QWidget):
         self.settings_view = ToolSettingsView(self.tool_settings, "Handwriting", self)
         self.settings_button.clicked.connect(self.settings_requested)
         self.workspace = DrawingWorkspace(settings)
+        self.scroll = self.workspace.scroll
         # Keep a single set of public controls for the existing controller interface.
         for name in (
             "canvas",

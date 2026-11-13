@@ -17,7 +17,7 @@ def test_caption_visibility_and_pin_only_change_through_preferences(qtbot):
     qtbot.addWidget(overlay)
     overlay.show()
     assert not overlay.findChildren(QCheckBox)
-    assert all(combo.objectName() == "audioSpeed" for combo in overlay.findChildren(QComboBox))
+    assert all(combo.objectName() in {"audioSpeed", "paneLanguage"} for combo in overlay.findChildren(QComboBox))
     assert not overlay.findChildren(QSpinBox)
     assert overlay.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
     overlay.update_settings(replace(settings, transcript_visible=False, translation_visible=False))
@@ -48,6 +48,7 @@ def test_caption_speech_stop_is_separate_from_capture_and_clear(qtbot):
     assert overlay.transcript.toPlainText() == ""
     assert overlay.translation.toPlainText() == ""
     assert stop_capture.count() == 0
+    overlay.set_capture_state("recording")
     overlay.stop_button.click()
     assert stop_capture.count() == 1
 

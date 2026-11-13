@@ -37,7 +37,11 @@ class Controller(QObject):
         self.handwriting = Handwriting(self)
         self.shortcuts = GlobalShortcuts()
         self.applied_shortcuts = None
-        self.accept_audio = {"input": True, "output": True}
+        self.accept_audio = {"input": False, "output": False}
+        self.capture_active = {"input": False, "output": False}
+        self.capture_stopping = {"input": False, "output": False}
+        self.capture_errors = {"input": "", "output": ""}
+        self.capture_phases = {"input": "idle", "output": "idle"}
         self.caption_history = {}
         self.history_sessions = {}
         self.captures = {mode: AudioCapture(self) for mode in ("input", "output")}
@@ -45,6 +49,7 @@ class Controller(QObject):
         self.captures["input"].started.connect(self.recording_cues.recording_started)
         self.captures["input"].stopped.connect(self.recording_cues.recording_stopped)
         for mode, capture in self.captures.items():
+            capture.started.connect(lambda m=mode: self._started(m))
             capture.chunk.connect(lambda audio, m=mode: self._audio(m, audio))
             capture.error.connect(lambda message, m=mode: self._capture_error(m, message))
             capture.stopped.connect(lambda m=mode: self._stopped(m))
@@ -73,6 +78,8 @@ class Controller(QObject):
         window.history_refresh_requested.connect(self.refresh_history)
         window.history_delete_requested.connect(self.delete_history)
         overlay.stop_requested.connect(lambda: self.stop("output"))
+        overlay.start_requested.connect(lambda: self.start("output", self.settings.output_chunked))
+        overlay.options_changed.connect(window._apply_settings_patch)
         overlay.cleared.connect(self.clear_captions)
         window.pages["output"].cleared.connect(self.clear_captions)
         overlay.audio_requested.connect(self.workflows.speak)
@@ -171,7 +178,13 @@ class Controller(QObject):
         self.jobs.submit(work, success, failed)
 
     def start(self, mode, chunked):
-        if mode not in self.captures or not self.require_key():
+        if mode not in self.captures:
+            return
+        if self.capture_active[mode]:
+            self.refresh_capture_state(mode)
+            return
+        if not self.require_key():
+            self.refresh_capture_state(mode)
             return
         if mode in self.workflows.imports:
             self.fail("Stop the file import before recording.")
@@ -182,6 +195,9 @@ class Controller(QObject):
         if self.pipeline_busy(mode):
             self.status("Finishing the previous recording. Please wait before starting another.")
             return
+        self.capture_active[mode] = True
+        self.capture_stopping[mode] = False
+        self.capture_errors[mode] = ""
         self.pipeline.begin_session(mode)
         self.history_sessions[mode] = uuid4().hex
         try:
@@ -190,28 +206,49 @@ class Controller(QObject):
             if mode == "input":
                 self.dictation.reset()
             capture.start(source, chunked, getattr(self.settings, f"{mode}_chunk_seconds"))
-            self.window.set_recording(mode, True)
             if mode == "output":
                 self.show_overlay()
-                self.overlay.set_status("Listening to system audio…")
-            self.status("Listening to microphone…" if mode == "input" else "Listening to system audio…")
+            self.refresh_capture_state(mode, report=True)
         except (OSError, RuntimeError, ValueError) as exc:
-            self.fail(str(exc))
+            self.capture_active[mode] = False
+            self.capture_stopping[mode] = False
+            self.accept_audio[mode] = False
+            self._capture_error(mode, str(exc))
 
     def stop(self, mode):
-        self.workflows.cancel_import(mode)
+        if mode not in self.captures:
+            return
+        if mode in self.workflows.imports:
+            self.workflows.cancel_import(mode)
+            self.refresh_capture_state(mode)
+            return
+        if not self.capture_active[mode] or self.capture_stopping[mode]:
+            self.refresh_capture_state(mode)
+            return
+        self.capture_stopping[mode] = True
+        self.refresh_capture_state(mode, report=True)
         self.captures[mode].stop()
-        self.status("Stopping capture; finishing the last audio segment…")
-        if mode == "output":
-            self.overlay.set_status("Finishing the last audio segment…")
+        # A test/device implementation can emit stopped synchronously. Never
+        # overwrite that completed state with another unconditional "finishing".
+        self.refresh_capture_state(mode)
+
+    def _started(self, mode):
+        if self.capture_active[mode] and not self.capture_stopping[mode]:
+            self.refresh_capture_state(mode)
 
     def _stopped(self, mode):
-        self.window.set_recording(mode, False)
+        self.capture_active[mode] = False
+        self.capture_stopping[mode] = False
+        self.accept_audio[mode] = False
+        self.refresh_capture_state(mode, report=True)
 
     def _capture_error(self, mode, message):
+        self.capture_errors[mode] = message
+        if self.capture_active[mode]:
+            self.capture_stopping[mode] = True
+            self.captures[mode].stop()
+        self.refresh_capture_state(mode)
         self.fail(message)
-        if mode == "output":
-            self.overlay.set_status(message)
 
     def _audio(self, mode, audio):
         if self.accept_audio[mode]:
@@ -219,10 +256,12 @@ class Controller(QObject):
 
     def _pipeline_error(self, mode, message):
         self.accept_audio[mode] = False
-        self.captures[mode].stop()
+        self.capture_errors[mode] = message
+        if self.capture_active[mode]:
+            self.capture_stopping[mode] = True
+            self.captures[mode].stop()
+        self.refresh_capture_state(mode)
         self.fail(message)
-        if mode == "output":
-            self.overlay.set_status(message)
 
     def _transcript(self, mode, text, segment_id=None):
         self.window.append_result(mode, text, segment_id=segment_id)
@@ -261,12 +300,37 @@ class Controller(QObject):
         self.refresh_history()
 
     def _pending(self, mode, count):
-        if mode == "output" and self.accept_audio[mode]:
-            self.overlay.set_status(f"Processing {count} audio segment(s)…" if count else
-                                    "Listening…" if self.captures[mode].is_running else "Capture stopped.")
-        if (not count and not self.captures[mode].is_running
-                and not self.window.status.property("error")):
-            self.window.set_status("Capture stopped. Recognized text is available in history.")
+        if mode in self.captures:
+            previous = self.capture_phases[mode]
+            self.refresh_capture_state(mode)
+            if previous == "finishing" and self.capture_phases[mode] == "idle" and not self.capture_errors[mode]:
+                self.status("Capture stopped.")
+
+    def refresh_capture_state(self, mode, *, report=False):
+        pending = self.pipeline.pending_count(mode)
+        importing = mode in self.workflows.imports
+        active = self.capture_active[mode] or importing
+        state = ("finishing" if self.capture_stopping[mode] or (pending and not active)
+                 else "recording" if active else "idle")
+        self.capture_phases[mode] = state
+        self.window.set_recording(mode, state == "recording")
+        self.window.pages[mode].set_capture_state(state, pending)
+        if mode == "output":
+            self.overlay.set_capture_state(state, pending)
+            if self.capture_errors[mode]:
+                self.overlay.set_status(self.capture_errors[mode])
+            elif importing:
+                self.overlay.set_status("Transcribing audio file…")
+            else:
+                self.overlay.set_status(f"Processing {pending} audio segment(s)…"
+                                        if state == "recording" and pending else "")
+        if report and not self.capture_errors[mode]:
+            if state == "recording":
+                self.status("Listening to microphone…" if mode == "input" else "Listening to system audio…")
+            elif state == "finishing":
+                self.status(f"Processing {pending} audio segment(s)…" if pending else "Finishing the last audio segment…")
+            else:
+                self.status("Capture stopped.")
 
     def remember(self, mode, text, translation="", model=""):
         result = translation if isinstance(translation, TranslationResult) else TranslationResult(translation)
@@ -287,6 +351,7 @@ class Controller(QObject):
         self.status("History deleted.")
 
     def show_overlay(self):
+        self.refresh_capture_state("output")
         self.overlay.show()
         self.overlay.raise_()
 

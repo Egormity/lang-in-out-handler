@@ -58,9 +58,10 @@ def delivery(page, settings, layout):
 def captions(page, settings, layout):
     form = group("Floating captions", layout)
     number(page, form, "Text size", "font_size", minimum=12, maximum=56, suffix=" px")
-    page.opacity = NumberInput(40, 100, step=5, suffix="%", name="Window opacity")
+    page.opacity = NumberInput(40, 100, step=5, suffix="%", name="Background opacity")
+    page.opacity.setToolTip("Caption background opacity. Text and controls stay readable.")
     page.fields.add(
-        form, "Opacity", "overlay_opacity", page.opacity,
+        form, "Background opacity", "overlay_opacity", page.opacity,
         read=lambda: page.opacity.value() / 100,
         write=lambda value: page.opacity.setValue(round(value * 100)),
     )

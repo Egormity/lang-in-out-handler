@@ -23,7 +23,9 @@ def test_progress_uses_recognize_button_and_keeps_latest_revision_submission(qtb
     assert page.send_button.accessibleName() == "Recognizing handwriting"
     assert not hasattr(page, "status")
     assert not hasattr(page.workspace, "status")
-    assert page.send_button.mapTo(page.workspace, QPoint()).y() < page.canvas.y()
+    assert page.send_button.mapTo(page.workspace, QPoint()).y() < page.canvas.mapTo(
+        page.workspace, QPoint()
+    ).y()
     add_stroke(page.canvas, 40)
     requested = QSignalSpy(page.requested)
     page.send_button.click()
@@ -56,7 +58,9 @@ def test_floating_canvas_has_the_same_progress_action_and_no_footer(qtbot):
         page.set_busy(True)
         assert page.floating.isAncestorOf(page.send_button)
         assert page.send_button.text() == "Recognizing…"
-        assert page.send_button.mapTo(page.workspace, QPoint()).y() < page.canvas.y()
+        frame = page.workspace.canvas_frame
+        assert frame.isAncestorOf(page.send_button)
+        assert frame.rect().contains(page.send_button.mapTo(frame, QPoint()))
         page.canvas.clear()
         assert not page.send_button.isEnabled()
         assert page.send_button.text() == "Recognize"

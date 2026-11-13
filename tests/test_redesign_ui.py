@@ -95,7 +95,7 @@ def test_text_and_pronunciation_stay_together_and_actions_are_accessible(qtbot):
     assert page.run.mapTo(page, QPoint()).y() < page.splitter.geometry().top()
 
 
-def test_floating_canvas_keeps_settings_out_and_recognize_above_canvas(qtbot):
+def test_floating_canvas_keeps_settings_out_and_overlays_recognize(qtbot):
     page = DrawingPage(Settings(drawing_auto_send=False))
     qtbot.addWidget(page)
     page.setStyleSheet(STYLE)
@@ -105,7 +105,9 @@ def test_floating_canvas_keeps_settings_out_and_recognize_above_canvas(qtbot):
         qtbot.wait(20)
         assert not page.floating.findChildren(QComboBox)
         assert not page.floating.isAncestorOf(page.tool_settings)
-        assert page.send_button.mapTo(page.workspace, QPoint()).y() < page.canvas.geometry().top()
+        frame = page.workspace.canvas_frame
+        assert frame.isAncestorOf(page.send_button)
+        assert frame.rect().contains(page.send_button.mapTo(frame, QPoint()))
         assert page.canvas.height() >= 200
     finally:
         page.shutdown()
@@ -125,7 +127,7 @@ def test_floating_captions_update_one_continuous_document(qtbot):
     overlay.annotate_translation(1, TranslationResult("It's sunny", "Kyō wa", "/ɪts ˈsʌni/"))
     overlay.annotate_translation(2, TranslationResult("today.", "hare desu", "/təˈdeɪ/"))
     assert overlay.translation.toPlainText() == "It's sunny today."
-    assert all(combo.objectName() == "audioSpeed" for combo in overlay.findChildren(QComboBox))
+    assert all(combo.objectName() in {"audioSpeed", "paneLanguage"} for combo in overlay.findChildren(QComboBox))
     overlay.clear()
     overlay.annotate_translation(1, TranslationResult("stale", "stale", "stale"))
     assert overlay.translation.toPlainText() == ""

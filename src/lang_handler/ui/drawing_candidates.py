@@ -1,7 +1,7 @@
 """Selectable handwriting candidates with an action for each reading."""
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from .common import label
 from .copy_button import CopyButton
@@ -22,6 +22,8 @@ class CandidateRow(QWidget):
         row.setSpacing(6)
         reading = QLabel(text)
         reading.setWordWrap(True)
+        reading.setMinimumWidth(0)
+        reading.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         reading.setStyleSheet("font-size: 20px;")
         reading.setTextFormat(Qt.TextFormat.PlainText)
         reading.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -52,6 +54,7 @@ class DrawingCandidates(QWidget):
         super().__init__()
         self.rows = []
         self.items = []
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
@@ -63,19 +66,12 @@ class DrawingCandidates(QWidget):
         self.stop.hide()
         header.addWidget(self.stop)
         layout.addLayout(header)
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.body = QWidget()
-        self.rows_layout = QVBoxLayout(self.body)
+        self.rows_layout = QVBoxLayout()
         self.rows_layout.setContentsMargins(0, 0, 0, 0)
         self.rows_layout.setSpacing(2)
-        self.rows_layout.addStretch()
-        self.scroll.setWidget(self.body)
-        layout.addWidget(self.scroll)
+        layout.addLayout(self.rows_layout)
         self.empty = label("Recognized readings will appear here.", True)
         self.rows_layout.insertWidget(0, self.empty)
-        self.setMinimumHeight(90)
-        self.setMaximumHeight(190)
 
     def set_items(self, items: list[str]):
         self.clear()

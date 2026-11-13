@@ -35,11 +35,7 @@ class FileImports(QObject):
         session_id = uuid4().hex
         self.generations[mode] = generation
         model = getattr(settings, f"{mode}_model")
-        self.c.window.set_recording(mode, True)
-        self.c.status("Transcribing audio file…")
-        if mode == "output":
-            self.c.show_overlay()
-            self.c.overlay.set_status("Transcribing audio file…")
+        self.c.capture_errors[mode] = ""
 
         def work(cancel, progress):
             service = OpenAIService(key, proxy=settings.api_proxy_url or None)
@@ -105,7 +101,7 @@ class FileImports(QObject):
             if self.generations.get(mode) != generation:
                 return
             self.imports.pop(mode, None)
-            self.c.window.set_recording(mode, False)
+            self.c.refresh_capture_state(mode)
 
         def success(count):
             if self.generations.get(mode) == generation:
@@ -115,18 +111,23 @@ class FileImports(QObject):
 
         def failed(message):
             if self.generations.get(mode) == generation:
+                self.c.capture_errors[mode] = message
                 self.c.fail(message)
                 if mode == "output":
                     self.c.overlay.set_status(message)
 
         self.imports[mode] = self.c.jobs.submit(work, success, failed, progress, done)
+        self.c.refresh_capture_state(mode)
+        self.c.status("Transcribing audio file…")
+        if mode == "output":
+            self.c.show_overlay()
 
     def cancel(self, mode):
         job = self.imports.pop(mode, None)
         if job:
             self.generations[mode] = self.generations.get(mode, 0) + 1
             job.cancelled.set()
-            self.c.window.set_recording(mode, False)
+            self.c.refresh_capture_state(mode)
             self.c.status("File import cancelled; completed text remains in history.")
 
     def shutdown(self):

@@ -32,6 +32,7 @@ class CapturePage(QWidget):
         super().__init__()
         self.mode, self.settings = mode, settings
         self.recording = False
+        self.capture_state = "idle"
         is_input = mode == "input"
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
@@ -103,13 +104,19 @@ class CapturePage(QWidget):
         return getattr(self.settings, f"{self.mode}_chunked")
 
     def set_recording(self, active):
-        self.recording = active
-        self.start_button.setVisible(not active)
-        self.start_button.setEnabled(not active)
-        self.stop_button.setVisible(active)
-        self.stop_button.setEnabled(active)
-        self.source_language.setEnabled(not active)
-        self.level.set_recording(active)
+        self.set_capture_state("recording" if active else "idle")
+
+    def set_capture_state(self, state, pending=0):
+        self.capture_state = state
+        self.recording = state == "recording"
+        self.start_button.setVisible(state == "idle")
+        self.start_button.setEnabled(state == "idle")
+        self.stop_button.setVisible(state != "idle")
+        self.stop_button.setEnabled(state == "recording")
+        self.stop_button.setText("Finishing…" if state == "finishing" else
+                                 "Stop dictation" if self.mode == "input" else "Stop captions")
+        self.source_language.setEnabled(self.mode == "output" or state == "idle")
+        self.level.set_recording(self.recording)
 
     def clear(self):
         self.results.clear()

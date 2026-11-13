@@ -117,8 +117,10 @@ def test_drawing_controls_never_overlap_canvas_at_small_window_sizes(qtbot):
         window.resize(width, height)
         qtbot.wait(30)
         canvas_bottom = page.canvas.geometry().bottom()
-        assert page.undo_button.geometry().bottom() < page.canvas.geometry().top()
-        assert page.send_button.geometry().bottom() < page.canvas.geometry().top()
+        canvas_top = page.canvas.mapTo(page.workspace, QPoint()).y()
+        for control in (page.undo_button, page.send_button):
+            bottom = control.mapTo(page.workspace, QPoint(0, control.height() - 1)).y()
+            assert bottom < canvas_top
         assert page.result.geometry().top() > canvas_bottom
         page.scroll.ensureWidgetVisible(page.result)
         qtbot.wait(10)
@@ -136,7 +138,9 @@ def test_float_and_dock_keep_one_canvas_revision_and_recognized_text(qtbot):
     page.float_button.click()
     qtbot.waitUntil(page.floating.isVisible)
     assert page.is_floating
-    assert page.floating.scroll.widget() is page.workspace
+    assert page.floating.workspace is page.workspace
+    assert page.floating.scroll is page.workspace.scroll
+    assert page.floating.scroll.widget() is page.workspace.body
     assert page.canvas is original_canvas
     assert page.canvas.revision == revision
     assert page.canvas.strokes == strokes
@@ -146,7 +150,8 @@ def test_float_and_dock_keep_one_canvas_revision_and_recognized_text(qtbot):
     page.floating.dock_button.click()
     assert not page.floating.isVisible()
     assert not page.is_floating
-    assert page.floating.scroll.widget() is None
+    assert page.floating.workspace is None
+    assert page.floating.scroll is None
     assert page.canvas is original_canvas
     assert page.canvas.revision == revision
     assert changed.count() == 0
@@ -200,9 +205,15 @@ def test_floating_editor_keeps_canvas_large_and_contains_no_preferences(qtbot):
         qtbot.wait(20)
         assert page.canvas.height() >= 200
         assert page.canvas.height() > page.result.height()
-        assert page.undo_button.geometry().bottom() < page.canvas.geometry().top()
-        assert page.send_button.geometry().bottom() < page.canvas.geometry().top()
-        assert page.result.geometry().top() > page.canvas.geometry().bottom()
+        for control in (page.undo_button, page.send_button):
+            frame = page.workspace.canvas_frame
+            assert frame.isAncestorOf(control)
+            assert not page.canvas.isAncestorOf(control)
+            assert frame.rect().contains(control.mapTo(frame, QPoint()))
+            assert frame.rect().contains(
+                control.mapTo(frame, control.rect().bottomRight())
+            )
+        assert page.result.geometry().top() > page.workspace.canvas_frame.geometry().bottom()
     for kind in (QCheckBox, QComboBox, QSpinBox, QPlainTextEdit):
         assert page.floating.findChildren(kind) == []
     page.dock_workspace()
