@@ -44,7 +44,7 @@ class Workflows(QObject):
             self.c.show_overlay()
 
         def work(cancel, progress):
-            service = OpenAIService(key)
+            service = OpenAIService(key, proxy=settings.api_proxy_url or None)
             count = 0
             try:
                 chunks = audio_file_chunks(Path(path), settings.chunk_seconds if chunked else None)
@@ -118,7 +118,7 @@ class Workflows(QObject):
         self.c.status("Translating…")
 
         def work(cancel, progress):
-            service = OpenAIService(key)
+            service = OpenAIService(key, proxy=settings.api_proxy_url or None)
             try:
                 return service.translate(
                     text,
@@ -152,7 +152,7 @@ class Workflows(QObject):
         self.c.status("Generating speech…")
 
         def work(cancel, progress):
-            service = OpenAIService(key)
+            service = OpenAIService(key, proxy=settings.api_proxy_url or None)
             try:
                 return service.synthesize(
                     text, settings.tts_model, settings.voice, settings.tts_instructions

@@ -25,8 +25,8 @@ from .common import button, editable_combo, label, language_combo, language_valu
 class PreferencesPage(QWidget):
     saved = Signal(object)
     key_saved = Signal(str)
-    key_test_requested = Signal()
-    models_requested = Signal()
+    key_test_requested = Signal(str)
+    models_requested = Signal(str)
 
     def __init__(self, settings, api_key_present=False):
         super().__init__()
@@ -49,16 +49,22 @@ class PreferencesPage(QWidget):
         self.api_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.api_key.setPlaceholderText("Enter a new API key to save or replace it")
         form.addRow("API key", self.api_key)
+        self.api_proxy_url = QLineEdit(settings.api_proxy_url)
+        self.api_proxy_url.setPlaceholderText("Use environment proxy (or direct if unset)")
+        self.api_proxy_url.setToolTip(
+            "Supports HTTP, HTTPS, and SOCKS proxy URLs. Leave empty to use the environment proxy, or connect directly when none is configured."
+        )
+        form.addRow("Proxy URL", self.api_proxy_url)
         actions = QHBoxLayout()
         save_key = button("Save key")
-        test_key = button("Test connection")
-        refresh = button("Refresh models")
+        self.test_key_button = button("Test connection")
+        self.refresh_models_button = button("Refresh models")
         self.remove_key_button = button("Remove saved key")
         self.remove_key_button.setEnabled(api_key_present)
         self.remove_key_button.clicked.connect(self._remove_key)
         actions.addWidget(save_key)
-        actions.addWidget(test_key)
-        actions.addWidget(refresh)
+        actions.addWidget(self.test_key_button)
+        actions.addWidget(self.refresh_models_button)
         actions.addWidget(self.remove_key_button)
         form.addRow(actions)
         self.key_status = label(
@@ -66,8 +72,13 @@ class PreferencesPage(QWidget):
         )
         form.addRow(self.key_status)
         save_key.clicked.connect(self._save_key)
-        test_key.clicked.connect(self.key_test_requested)
-        refresh.clicked.connect(self.models_requested)
+        self.test_key_button.clicked.connect(
+            lambda: self.key_test_requested.emit(self.api_key.text().strip())
+        )
+        self.refresh_models_button.clicked.connect(
+            lambda: self.models_requested.emit(self.api_key.text().strip())
+        )
+        self.api_key.textChanged.connect(self._update_key_actions)
         _, form = self._group("Models", layout)
         self.models = {}
         for key, title in [
@@ -186,15 +197,22 @@ class PreferencesPage(QWidget):
         value = self.api_key.text().strip()
         if value:
             self.key_saved.emit(value)
-            self.api_key.clear()
+
+    def _update_key_actions(self):
+        pending = bool(self.api_key.text().strip())
+        self.test_key_button.setText("Save and test" if pending else "Test connection")
+        self.refresh_models_button.setText("Save and refresh" if pending else "Refresh models")
+        hint = "Save and use the key entered above." if pending else "Use the saved API key."
+        self.test_key_button.setToolTip(hint)
+        self.refresh_models_button.setToolTip(hint)
 
     def _remove_key(self):
-        self.api_key.clear()
         self.key_saved.emit("")
 
     def collect(self):
         values = {key: widget.currentText().strip() for key, widget in self.models.items()}
         values.update(
+            api_proxy_url=self.api_proxy_url.text().strip(),
             input_language=language_value(self.input_language),
             output_language=language_value(self.output_language),
             target_language=self.target_language.currentText().strip() or "English",
@@ -249,6 +267,7 @@ class PreferencesPage(QWidget):
 
     def update_settings(self, settings):
         self.settings = settings
+        self.api_proxy_url.setText(settings.api_proxy_url)
         for key, widget in self.models.items():
             widget.setCurrentText(getattr(settings, key))
         for widget, value in [

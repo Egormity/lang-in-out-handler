@@ -51,7 +51,7 @@ class FakeShortcuts:
 
 
 class FakeService:
-    def __init__(self, key):
+    def __init__(self, key, **kwargs):
         pass
 
     def transcribe(self, audio, *args):

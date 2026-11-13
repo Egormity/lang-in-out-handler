@@ -34,10 +34,11 @@ class Handwriting(QObject):
         self.c.status("Reading handwriting…")
 
         def work(cancel, progress):
-            service = OpenAIService(key)
+            service = OpenAIService(key, proxy=settings.api_proxy_url or None)
             try:
-                return service.recognize_handwriting(png, settings.drawing_model,
-                                                     settings.drawing_instructions)
+                return service.recognize_handwriting(
+                    png, settings.drawing_model, settings.drawing_instructions
+                )
             finally:
                 service.close()
 

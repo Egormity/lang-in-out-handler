@@ -153,6 +153,8 @@ def test_settings_update_does_not_emit_feedback_and_key_clears(qtbot):
     saved_keys = QSignalSpy(window.key_saved)
     preferences.api_key.setText("unit-test-placeholder")
     preferences._save_key()
+    assert preferences.api_key.text() == "unit-test-placeholder"
+    window.key_saved_successfully()
     assert preferences.api_key.text() == ""
     assert saved_keys.count() == 1
     window.set_key_status("No API key saved.")
@@ -184,6 +186,7 @@ def test_remove_key_and_tts_model_choices(qtbot):
     preferences.api_key.setText("unsaved-placeholder")
     preferences.remove_key_button.click()
     assert keys.at(0) == [""]
+    window.key_saved_successfully()
     assert preferences.api_key.text() == ""
     window.set_key_status("API key removed.")
     assert not preferences.remove_key_button.isEnabled()
@@ -215,3 +218,64 @@ def test_speech_replay_is_forwarded_to_controller(qtbot):
     assert replay.count() == 1
     assert replay.at(0) == ["/tmp/unit-test-speech.wav"]
     assert generated.count() == 0
+
+
+def test_key_test_and_model_refresh_receive_fresh_candidate(qtbot):
+    window = MainWindow(Settings(), True)
+    qtbot.addWidget(window)
+    preferences = window.pages["preferences"]
+    tested = []
+    refreshed = []
+    window.key_test_requested.connect(tested.append)
+    window.models_requested.connect(refreshed.append)
+    preferences.api_key.setText("  replacement-placeholder  ")
+    assert preferences.test_key_button.text() == "Save and test"
+    preferences.test_key_button.click()
+    preferences.refresh_models_button.click()
+    assert tested == ["replacement-placeholder"]
+    assert refreshed == ["replacement-placeholder"]
+    assert preferences.api_key.text().strip() == "replacement-placeholder"
+    window.key_saved_successfully()
+    assert preferences.api_key.text() == ""
+    assert preferences.test_key_button.text() == "Test connection"
+    preferences.test_key_button.click()
+    preferences.refresh_models_button.click()
+    assert tested[-1] == ""
+    assert refreshed[-1] == ""
+
+
+def test_key_save_failure_keeps_masked_candidate_for_retry(qtbot):
+    window = MainWindow(Settings(), True)
+    qtbot.addWidget(window)
+    preferences = window.pages["preferences"]
+    attempts = []
+
+    def failed_save(candidate):
+        attempts.append(candidate)
+        window.set_status("Could not save the API key. Check local credential storage.", True)
+
+    window.key_saved.connect(failed_save)
+    preferences.api_key.setText("replacement-placeholder")
+    preferences._save_key()
+    assert attempts == ["replacement-placeholder"]
+    assert preferences.api_key.text() == "replacement-placeholder"
+    assert preferences.api_key.echoMode() == QLineEdit.EchoMode.Password
+    assert window.status.property("error")
+
+
+def test_proxy_preferences_round_trip_and_pending_connection_value(qtbot):
+    window = MainWindow(Settings(api_proxy_url="http://proxy.example:8080"), True)
+    qtbot.addWidget(window)
+    preferences = window.pages["preferences"]
+    assert preferences.api_proxy_url.text() == "http://proxy.example:8080"
+    preferences.api_proxy_url.setText("  socks5://proxy.example:1080  ")
+    preferences.models["input_model"].setCurrentText("unsaved-model-placeholder")
+    assert window.connection_proxy_url() == "socks5://proxy.example:1080"
+    assert preferences.models["input_model"].currentText() == "unsaved-model-placeholder"
+    saved = preferences.collect()
+    assert saved.api_proxy_url == "socks5://proxy.example:1080"
+    window.update_settings(saved)
+    assert preferences.api_proxy_url.text() == saved.api_proxy_url
+    preferences.api_proxy_url.clear()
+    assert window.connection_proxy_url() == ""
+    assert preferences.collect().api_proxy_url == ""

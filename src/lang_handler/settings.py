@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass, field
 
 @dataclass
 class Settings:
+    api_proxy_url: str = ""
     input_model: str = "gpt-transcribe"
     output_model: str = "gpt-transcribe"
     translation_model: str = "gpt-6-luna"

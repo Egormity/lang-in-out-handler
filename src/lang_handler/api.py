@@ -13,16 +13,17 @@ MAX_AUDIO_BYTES = 25 * 1024 * 1024
 
 
 class OpenAIService:
-    def __init__(self, api_key: str, *, client=None):
+    def __init__(self, api_key: str, *, client=None, proxy: str | None = None):
         if not api_key.strip():
             raise ServiceError("Add your OpenAI API key in Preferences first.")
         self._key = api_key.strip()
+        self._proxy = proxy_url(proxy)
         self._client = client or OpenAI(
             api_key=self._key,
             base_url="https://api.openai.com/v1",
             max_retries=1,
             http_client=httpx.Client(
-                proxy=proxy_url(),
+                proxy=self._proxy,
                 trust_env=False,
                 timeout=httpx.Timeout(90, connect=15, write=30, pool=15),
             ),
@@ -114,7 +115,14 @@ class OpenAIService:
             if model.startswith("gpt-realtime"):
                 from .tts_api import realtime_speech
 
-                return realtime_speech(self._key, text, model, voice, instructions)
+                return realtime_speech(
+                    self._key,
+                    text,
+                    model,
+                    voice,
+                    instructions,
+                    proxy=self._proxy,
+                )
             options = {
                 "model": model,
                 "voice": voice,
@@ -149,11 +157,22 @@ class OpenAIService:
             f"Additional recognition instructions: {instructions.strip()}"
         )
         options = {
-            "model": model, "instructions": guidance, "store": False,
-            "input": [{"role": "user", "content": [
-                {"type": "input_image", "detail": "high",
-                 "image_url": "data:image/png;base64," + base64.b64encode(png).decode("ascii")},
-            ]}],
+            "model": model,
+            "instructions": guidance,
+            "store": False,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_image",
+                            "detail": "high",
+                            "image_url": "data:image/png;base64,"
+                            + base64.b64encode(png).decode("ascii"),
+                        },
+                    ],
+                }
+            ],
         }
         if model.startswith(("gpt-5", "gpt-6", "o1", "o3", "o4")):
             options["reasoning"] = {"effort": "low"}

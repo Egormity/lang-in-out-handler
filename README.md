@@ -33,6 +33,8 @@ The installer creates a user-local launcher and applications-menu entry. On Debi
 
 Open **Preferences**, save your OpenAI API key, and use **Test connection / Refresh models**. Model discovery checks authentication; a successful paid transcription or translation also requires available API credit. Set the source language, translation target, models, devices, and shortcuts, then save preferences.
 
+If your desktop launcher does not inherit the terminal's proxy settings, set **Proxy URL** in Preferences. The saved HTTP(S)/SOCKS proxy applies to every mode, including Realtime speech; leaving it blank uses the process environment. Test connection uses the key and proxy currently entered in the form and saves them before checking, without discarding other pending preferences. Region/network restrictions are reported separately from invalid API keys.
+
 Defaults: `gpt-transcribe` for speech recognition, `gpt-6-luna` for text translation, and `gpt-realtime-2.1-mini` for speech generation. Model fields are editable. Available models depend on your API account. The app uses bounded audio uploads for both once and chunk modes; live-only transcription models are not selectable suggestions.
 
 ### Handwriting

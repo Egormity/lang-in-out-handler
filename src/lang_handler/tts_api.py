@@ -31,13 +31,15 @@ def realtime_speech(
     model: str,
     voice: str,
     instructions: str,
+    *,
+    proxy: str | None = None,
 ) -> bytes:
     """Read text aloud, collecting audio deltas into one playable WAV file."""
     connection = websocket.create_connection(
         "wss://api.openai.com/v1/realtime?model=" + quote(model, safe=""),
         header={"Authorization": f"Bearer {api_key}"},
         timeout=25,
-        **websocket_proxy(),
+        **websocket_proxy(proxy),
     )
     deadline = time.monotonic() + 120
     pcm = bytearray()

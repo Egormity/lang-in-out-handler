@@ -106,30 +106,46 @@ class Controller(QObject):
             else:
                 self.credentials.delete()
             self.key = key.strip()
+            self.window.key_saved_successfully()
             self.window.set_key_status(self.credentials.backend_label if self.key else "API key removed.")
             self.status("API key saved." if self.key else "API key removed.")
+            return True
         except (OSError, RuntimeError, ValueError) as exc:
             self.fail(str(exc))
+            return False
 
-    def test_key(self):
+    def test_key(self, candidate=""):
+        if candidate.strip() and not self.save_key(candidate):
+            return
         key = self.require_key()
         if not key:
             return
+        # Connection buttons apply the proxy being edited without resetting other
+        # unsaved model/language controls in the preferences page.
+        self.settings.api_proxy_url = self.window.connection_proxy_url()
+        self.store.save_settings(self.settings)
         self.status("Checking OpenAI model access…")
+        proxy = self.settings.api_proxy_url or None
 
         def work(cancel, progress):
-            service = OpenAIService(key)
+            service = OpenAIService(key, proxy=proxy)
             try:
                 return service.list_models()
             finally:
                 service.close()
 
         def success(models):
+            if key != self.key:
+                return
             self.window.set_models(models)
             self.window.set_key_status(f"Connected · {len(models)} models · {self.credentials.backend_label}")
             self.status("API key accepted. Model access checked; paid requests also require available API credit.")
 
-        self.jobs.submit(work, success, self.fail)
+        def failed(message):
+            if key == self.key:
+                self.fail(message)
+
+        self.jobs.submit(work, success, failed)
 
     def start(self, mode, chunked):
         if mode not in self.captures or not self.require_key():

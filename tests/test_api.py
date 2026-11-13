@@ -9,7 +9,7 @@ from openai import OpenAI
 
 from lang_handler.api import OpenAIService
 from lang_handler.errors import ServiceError
-from lang_handler.network import proxy_url
+from lang_handler.network import proxy_url, websocket_proxy
 from lang_handler.tts_api import realtime_speech
 
 
@@ -200,3 +200,127 @@ def test_realtime_failure_does_not_return_partial_audio(monkeypatch):
     with pytest.raises(ServiceError, match="did not complete"):
         realtime_speech("sk-test-only", "hello", "gpt-realtime-2.1-mini", "coral", "")
     assert socket.closed
+
+
+def test_saved_proxy_overrides_shell_proxy_for_http_and_realtime(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("HTTPS_PROXY", "http://environment.invalid:9999")
+    monkeypatch.delenv("https_proxy", raising=False)
+    http_options, speech_options = [], []
+    fake_http_client = object()
+
+    def http_client(**kwargs):
+        http_options.append(kwargs)
+        return fake_http_client
+
+    def sdk_client(**kwargs):
+        assert kwargs["http_client"] is fake_http_client
+        assert kwargs["base_url"] == "https://api.openai.com/v1"
+        return SimpleNamespace(close=lambda: None)
+
+    def speech(*args, **kwargs):
+        speech_options.append(kwargs)
+        return b"RIFFtest"
+
+    monkeypatch.setattr("lang_handler.api.httpx.Client", http_client)
+    monkeypatch.setattr("lang_handler.api.OpenAI", sdk_client)
+    monkeypatch.setattr("lang_handler.tts_api.realtime_speech", speech)
+    service = OpenAIService("sk-test-only", proxy="socks://saved-proxy.invalid:1081")
+    assert http_options[0]["proxy"] == "socks5://saved-proxy.invalid:1081"
+    assert http_options[0]["trust_env"] is False
+    assert service.synthesize("hello", "gpt-realtime-2.1-mini") == b"RIFFtest"
+    assert speech_options == [{"proxy": "socks5://saved-proxy.invalid:1081"}]
+    service.close()
+
+
+def test_realtime_connection_uses_explicit_proxy_even_without_desktop_environment(monkeypatch):
+    for name in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    socket = FakeSocket(
+        [
+            {"type": "session.updated"},
+            {"type": "response.output_audio.delta", "delta": "AAAAAA=="},
+            {"type": "response.done", "response": {"status": "completed"}},
+        ]
+    )
+    options = []
+
+    def connect(url, **kwargs):
+        options.append(kwargs)
+        return socket
+
+    monkeypatch.setattr("websocket.create_connection", connect)
+    result = realtime_speech(
+        "sk-test-only",
+        "hello",
+        "gpt-realtime-2.1-mini",
+        "coral",
+        "",
+        proxy="http://saved-proxy.invalid:8181",
+    )
+    assert result.startswith(b"RIFF")
+    assert options[0]["http_proxy_host"] == "saved-proxy.invalid"
+    assert options[0]["http_proxy_port"] == 8181
+    assert options[0]["proxy_type"] == "http"
+
+
+def test_blank_saved_proxy_keeps_environment_fallback(monkeypatch):
+    monkeypatch.setenv("https_proxy", "http://environment.invalid:8080")
+    assert proxy_url("") == "http://environment.invalid:8080"
+    assert proxy_url("   ") == "http://environment.invalid:8080"
+    assert websocket_proxy("socks://saved-proxy.invalid")["http_proxy_port"] == 1080
+
+
+@pytest.mark.parametrize(
+    "proxy",
+    [
+        "ftp://username:private-password@proxy.invalid",
+        "http://proxy.invalid:not-a-port",
+        "missing-scheme.invalid:8080",
+        "http://",
+        "http://proxy.invalid:0",
+    ],
+)
+def test_invalid_proxy_errors_do_not_expose_proxy_credentials(proxy):
+    with pytest.raises(ServiceError, match="valid HTTP, HTTPS, or SOCKS5") as caught:
+        proxy_url(proxy)
+    assert "private-password" not in str(caught.value)
+    assert proxy not in str(caught.value)
+
+
+def test_region_rejection_is_not_reported_as_a_bad_api_key():
+    service = service_with(
+        lambda _: httpx.Response(
+            403,
+            json={
+                "error": {
+                    "message": "Country unsupported",
+                    "code": "unsupported_country_region_territory",
+                },
+            },
+        )
+    )
+    with pytest.raises(ServiceError, match="country/region") as caught:
+        service.list_models()
+    assert "network/proxy" in str(caught.value)
+    assert "API key" not in str(caught.value)
+    service.close()
+
+
+def test_other_forbidden_response_preserves_actionable_message_without_key():
+    service = service_with(
+        lambda _: httpx.Response(
+            403,
+            json={
+                "error": {
+                    "message": "Project permission missing for sk-test-only",
+                    "code": "permission_denied",
+                },
+            },
+        )
+    )
+    with pytest.raises(ServiceError, match="Project permission missing") as caught:
+        service.list_models()
+    assert "sk-test-only" not in str(caught.value)
+    service.close()

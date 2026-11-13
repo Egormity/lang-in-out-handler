@@ -38,8 +38,8 @@ class MainWindow(QMainWindow):
     overlay_requested = Signal()
     settings_saved = Signal(object)
     key_saved = Signal(str)
-    key_test_requested = Signal()
-    models_requested = Signal()
+    key_test_requested = Signal(str)
+    models_requested = Signal(str)
     history_delete_requested = Signal()
     history_refresh_requested = Signal()
 
@@ -279,6 +279,12 @@ class MainWindow(QMainWindow):
             badge = "Key saved"
         self.connection_badge.setText(badge)
         self.pages["preferences"].remove_key_button.setEnabled(badge != "API key needed")
+
+    def key_saved_successfully(self):
+        self.pages["preferences"].api_key.clear()
+
+    def connection_proxy_url(self) -> str:
+        return self.pages["preferences"].api_proxy_url.text().strip()
 
     def update_settings(self, settings):
         self.settings = settings

@@ -63,7 +63,7 @@ class CaptionPipeline(QObject):
         model = getattr(settings, f"{mode}_model")
 
         def work(cancel, progress):
-            service = OpenAIService(key)
+            service = OpenAIService(key, proxy=settings.api_proxy_url or None)
             try:
                 return service.transcribe(
                     audio,
@@ -115,7 +115,7 @@ class CaptionPipeline(QObject):
         generation = self.generations[mode]
 
         def work(cancel, progress):
-            service = OpenAIService(key)
+            service = OpenAIService(key, proxy=settings.api_proxy_url or None)
             try:
                 return service.translate(
                     text,

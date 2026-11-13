@@ -29,7 +29,7 @@ def test_live_sources_and_translations_stay_ordered_on_ui_thread(
     worker_threads = []
 
     class Service:
-        def __init__(self, key):
+        def __init__(self, key, **kwargs):
             pass
 
         def transcribe(self, audio, *args):
@@ -76,7 +76,7 @@ def test_abort_discards_old_generation_and_allows_a_fresh_recording(pipeline, qt
     calls = []
 
     class Service:
-        def __init__(self, key):
+        def __init__(self, key, **kwargs):
             pass
 
         def transcribe(self, audio, *args):
@@ -110,7 +110,7 @@ def test_backlog_is_bounded_and_reports_failure_instead_of_dropping_silently(
     started, release = threading.Event(), threading.Event()
 
     class Service:
-        def __init__(self, key):
+        def __init__(self, key, **kwargs):
             pass
 
         def transcribe(self, audio, *args):
@@ -142,7 +142,7 @@ def test_quota_failure_aborts_remaining_audio_requests(pipeline, qtbot, monkeypa
     calls = []
 
     class Service:
-        def __init__(self, key):
+        def __init__(self, key, **kwargs):
             pass
 
         def transcribe(self, audio, *args):
@@ -191,7 +191,7 @@ def test_translation_failure_preserves_every_recognized_source_exactly_once(
     release_failure = threading.Event()
 
     class Service:
-        def __init__(self, key):
+        def __init__(self, key, **kwargs):
             pass
 
         def transcribe(self, audio, *args):
@@ -239,7 +239,7 @@ def test_abort_and_shutdown_flush_recognized_sources_without_late_duplicates(
     release = threading.Event()
 
     class Service:
-        def __init__(self, key):
+        def __init__(self, key, **kwargs):
             pass
 
         def transcribe(self, audio, *args):

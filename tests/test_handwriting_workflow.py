@@ -68,7 +68,7 @@ def workflow(qapp):
 
 def install_service(monkeypatch, work):
     class Service:
-        def __init__(self, key):
+        def __init__(self, key, **kwargs):
             pass
 
         def recognize_handwriting(self, png, model, instructions):
