@@ -2,6 +2,7 @@
 
 from collections import OrderedDict
 
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QTextCursor
 
 from ..text_utils import flowing_text
@@ -9,8 +10,11 @@ from .common import TextPane
 
 
 class ContinuousPane(TextPane):
+    content_changed = Signal()
+
     def __init__(self, title, placeholder, *, compact=False):
         super().__init__(title, placeholder)
+        self.text.textChanged.connect(self.content_changed)
         self._fragments = OrderedDict()
         self._anonymous = 0
         self._following = True

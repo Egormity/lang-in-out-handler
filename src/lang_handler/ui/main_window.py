@@ -145,6 +145,9 @@ class MainWindow(QMainWindow):
         for mode in ("input", "output"):
             page = self.pages[mode]
             page.capture_requested.connect(lambda chunked, key=mode: self._capture(key, chunked))
+            page.file_requested.connect(
+                lambda path, chunked, key=mode: self.file_requested.emit(key, path, chunked)
+            )
             page.stop_requested.connect(lambda key=mode: self.stop_requested.emit(key))
             page.options_changed.connect(self._apply_settings_patch)
             page.audio_requested.connect(self.audio_requested)

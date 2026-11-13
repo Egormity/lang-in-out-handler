@@ -1,7 +1,7 @@
 """Minimal dictation and continuous-caption workspaces."""
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QHBoxLayout, QSplitter, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QSplitter, QVBoxLayout, QWidget
 
 from .audio_activity import AudioActivity
 from .common import button, label, language_value
@@ -19,6 +19,7 @@ from .tool_settings import ToolSettings, ToolSettingsView
 
 class CapturePage(QWidget):
     capture_requested = Signal(bool)
+    file_requested = Signal(str, bool)
     stop_requested = Signal()
     overlay_requested = Signal()
     options_changed = Signal(object)
@@ -47,6 +48,9 @@ class CapturePage(QWidget):
             self.show_overlay.setIcon(icon("float"))
             self.show_overlay.clicked.connect(self.overlay_requested)
             heading.addWidget(self.show_overlay)
+        self.attach_button = icon_button("attach", "Attach audio or video file")
+        self.attach_button.clicked.connect(self.attach_file)
+        heading.addWidget(self.attach_button)
         self.settings_button = icon_button("settings", "Dictation settings" if is_input else "Caption settings")
         heading.addWidget(self.settings_button)
         layout.addLayout(heading)
@@ -83,7 +87,9 @@ class CapturePage(QWidget):
             self.splitter.addWidget(self.translations)
             self.splitter.setSizes([450, 450])
             layout.addWidget(self.splitter, 1)
-        actions = QHBoxLayout()
+        self.actions_row = QWidget()
+        actions = QHBoxLayout(self.actions_row)
+        actions.setContentsMargins(0, 0, 0, 0)
         self.clear_button = icon_button("clear", "Clear transcript")
         self.clear_button.clicked.connect(self.clear)
         actions.addWidget(self.clear_button)
@@ -97,11 +103,33 @@ class CapturePage(QWidget):
         self.stop_button.setEnabled(False)
         heading.insertWidget(1, self.start_button)
         heading.insertWidget(2, self.stop_button)
-        layout.insertLayout(1, actions)
+        layout.insertWidget(1, self.actions_row)
+        self.results.content_changed.connect(self._update_actions)
+        if self.translations:
+            self.translations.content_changed.connect(self._update_actions)
+        self._update_actions()
         self.apply_settings(settings)
 
     def chunked(self):
         return getattr(self.settings, f"{self.mode}_chunked")
+
+    def attach_file(self):
+        if self.capture_state != "idle":
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Attach audio or video", "",
+            "Audio and video (*.wav *.mp3 *.m4a *.flac *.ogg *.opus *.aac *.aiff *.wma "
+            "*.mp4 *.mkv *.mov *.webm *.avi);;All files (*)",
+        )
+        # Capture can be started by a global shortcut while the picker is open.
+        if path and self.capture_state == "idle":
+            self.file_requested.emit(path, self.chunked())
+
+    def _update_actions(self):
+        has_text = bool(self.results.toPlainText().strip() or
+                        (self.translations and self.translations.toPlainText().strip()))
+        self.clear_button.setVisible(has_text)
+        self.actions_row.setVisible(has_text or self.recording)
 
     def set_recording(self, active):
         self.set_capture_state("recording" if active else "idle")
@@ -116,7 +144,9 @@ class CapturePage(QWidget):
         self.stop_button.setText("Finishing…" if state == "finishing" else
                                  "Stop dictation" if self.mode == "input" else "Stop captions")
         self.source_language.setEnabled(self.mode == "output" or state == "idle")
+        self.attach_button.setEnabled(state == "idle")
         self.level.set_recording(self.recording)
+        self._update_actions()
 
     def clear(self):
         self.results.clear()

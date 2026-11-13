@@ -62,6 +62,7 @@ class DictationEntry(QWidget):
 class DictationEntries(QWidget):
     speech_requested = Signal(str)
     audio_requested = Signal(str, object)
+    content_changed = Signal()
 
     def __init__(self, title="Transcript", placeholder="Your words appear here."):
         super().__init__()
@@ -113,6 +114,7 @@ class DictationEntries(QWidget):
             segment_id = ("local", self._anonymous)
         if segment_id in self._segments:
             self._segments[segment_id].set_result(text.strip(), pronunciation.strip())
+            self.content_changed.emit()
             return
         entry = DictationEntry(text.strip(), pronunciation.strip())
         entry.speech_requested.connect(self.speech_requested)
@@ -121,6 +123,7 @@ class DictationEntries(QWidget):
         self.entries.append(entry)
         self.empty.hide()
         self.rows.insertWidget(len(self.entries) - 1, entry)
+        self.content_changed.emit()
 
     def contains(self, segment_id):
         return segment_id in self._segments
@@ -130,6 +133,7 @@ class DictationEntries(QWidget):
             return False
         entry = self._segments[segment_id]
         entry.set_result(entry.text.toPlainText() if text is None else text, pronunciation)
+        self.content_changed.emit()
         return True
 
     def clear(self):
@@ -142,6 +146,7 @@ class DictationEntries(QWidget):
         self._segments.clear()
         self.empty.show()
         self._following = True
+        self.content_changed.emit()
 
     def toPlainText(self):
         return "\n".join(entry.text.toPlainText() for entry in self.entries)
