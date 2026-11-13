@@ -60,7 +60,7 @@ def test_translate_without_openai_key_preserves_guides(controller, qtbot, monkey
     c = controller
     google_settings(c)
     c.key = ""
-    monkeypatch.setattr("lang_handler.workflows.GoogleService", Google)
+    monkeypatch.setattr("lang_handler.text_translation.GoogleService", Google)
     monkeypatch.setattr(c, "require_key", lambda: (_ for _ in ()).throw(AssertionError("OpenAI key requested")))
     c.window.set_source_text("translate", "ともだち")
     c.workflows.translate("ともだち")
@@ -78,8 +78,8 @@ def test_google_failure_does_not_fall_back_to_paid_openai(controller, qtbot, mon
 
     c = controller
     google_settings(c)
-    monkeypatch.setattr("lang_handler.workflows.GoogleService", Denied)
-    monkeypatch.setattr("lang_handler.workflows.OpenAIService", lambda *a, **kw: (_ for _ in ()).throw(AssertionError("fallback")))
+    monkeypatch.setattr("lang_handler.text_translation.GoogleService", Denied)
+    monkeypatch.setattr("lang_handler.text_translation.OpenAIService", lambda *a, **kw: (_ for _ in ()).throw(AssertionError("fallback")))
     errors = []
     monkeypatch.setattr(c, "fail", errors.append)
     c.workflows.translate("hello")
@@ -157,7 +157,7 @@ def test_provider_change_during_translation_does_not_display_old_result(controll
 
     c = controller
     google_settings(c)
-    monkeypatch.setattr("lang_handler.workflows.GoogleService", Slow)
+    monkeypatch.setattr("lang_handler.text_translation.GoogleService", Slow)
     c.window.set_source_text("translate", "hello")
     try:
         c.workflows.translate("hello")

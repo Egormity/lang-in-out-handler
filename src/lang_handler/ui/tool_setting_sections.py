@@ -77,6 +77,17 @@ def translation(page, settings, layout, *, captions=False):
     reasoning(page, settings, form, "translation_reasoning", model_widget)
     page.target_language = target_language_selector(settings.target_language, compact=False)
     page.fields.add(form, "Translate into", "target_language", page.target_language)
+    if not captions:
+        toggle(page, form, "Automatic translation", "translation_auto_send")
+        page.translation_delay = NumberInput(
+            0.2, 10, step=0.1, decimals=1, suffix=" seconds", name="Wait after typing"
+        )
+        page.fields.add(
+            form, "Wait after typing", "translation_debounce_ms", page.translation_delay,
+            read=lambda: round(page.translation_delay.value() * 1000),
+            write=lambda value: page.translation_delay.setValue(value / 1000),
+        )
+        page.translation_auto_send.toggled.connect(page.translation_delay.setEnabled)
     instructions(page, settings, form, "translation_instructions", captions=captions)
     provider.hide_for_google(
         model_widget, page.translation_reasoning,

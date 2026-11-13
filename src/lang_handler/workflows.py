@@ -12,7 +12,7 @@ from shiboken6 import isValid
 from .api import OpenAIService
 from .desktop import play_audio
 from .file_import import FileImports
-from .google_api import GoogleService
+from .text_translation import TextTranslation
 from .ui.inline_audio import audio_is_active, stop_all_audio
 
 
@@ -26,7 +26,7 @@ class Workflows(QObject):
         self.imports = self.files.imports
         self.import_generations = self.files.generations
         self.speech_job = None
-        self.translation_job = None
+        self.translation = TextTranslation(controller)
         self.player = None
         self.audio_files = []
         self.playback_timer = QTimer(self)
@@ -36,51 +36,15 @@ class Workflows(QObject):
     def import_file(self, mode, path, chunked):
         self.files.start(mode, path, chunked)
 
-    def translate(self, text):
-        if not text.strip():
-            self.c.fail("Enter or copy some text to translate.")
-            return
-        google = self.c.settings.translation_provider == "google"
-        key = "" if google else self.c.require_key()
-        if not google and not key:
-            return
-        if self.translation_job:
-            self.c.status("Translation is already in progress.")
-            return
-        settings = deepcopy(self.c.settings)
-        self.c.status("Translating…")
-        page = self.c.window.pages["translate"]
-        page.set_busy(True)
+    @property
+    def translation_job(self):
+        return self.translation.job
 
-        def work(cancel, progress):
-            service = (GoogleService(proxy=settings.api_proxy_url or None) if google else
-                       OpenAIService(key, proxy=settings.api_proxy_url or None))
-            try:
-                if google:
-                    return service.translate(text, settings.target_language)
-                return service.translate(
-                    text,
-                    settings.translation_model,
-                    settings.target_language,
-                    settings.translation_instructions,
-                    settings.translation_reasoning,
-                )
-            finally:
-                service.close()
+    def translate(self, text, *, automatic=False):
+        self.translation.translate(text, automatic=automatic)
 
-        def success(translated):
-            displayed = (self.c.settings.translation_provider == settings.translation_provider
-                         and self.c.window.set_translation(translated, text, settings.target_language))
-            self.c.remember("translate", text, translated, "google-translate" if google
-                            else settings.translation_model)
-            self.c.status("Translation ready." if displayed else
-                          "Translation saved in History; the original text or target language changed.")
-
-        def done():
-            self.translation_job = None
-            page.set_busy(False)
-
-        self.translation_job = self.c.jobs.submit(work, success, self.c.fail, finished=done)
+    def invalidate_translation(self):
+        self.translation.invalidate()
 
     def speak(self, text, recipient=None):
         if not text.strip():
@@ -195,6 +159,7 @@ class Workflows(QObject):
         self.files.cancel(mode)
 
     def shutdown(self):
+        self.translation.shutdown()
         self.stop_speech()
         self.files.shutdown()
         for path in self.audio_files:

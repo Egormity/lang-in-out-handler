@@ -64,6 +64,10 @@ class Controller(QObject):
         window.stop_requested.connect(self.stop)
         window.file_requested.connect(self.workflows.import_file)
         window.translate_requested.connect(self.workflows.translate)
+        window.automatic_translate_requested.connect(
+            lambda text: self.workflows.translate(text, automatic=True)
+        )
+        window.translation_invalidated.connect(self.workflows.invalidate_translation)
         window.speech_requested.connect(self.workflows.speak)
         window.audio_requested.connect(self.workflows.speak)
         window.speech_stop_requested.connect(self.workflows.stop_speech)
@@ -398,6 +402,7 @@ class Controller(QObject):
         self.dictation.close()
         self.overlay.pin_control.stop()
         self.handwriting.cancel()
+        self.window.pages["translate"].shutdown()
         self.window.pages["drawing"].shutdown()
         self.jobs.cancel_all()
         self.workflows.shutdown()

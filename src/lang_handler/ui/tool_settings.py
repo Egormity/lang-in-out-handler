@@ -58,6 +58,8 @@ class ToolSettings(QWidget):
         self.fields.update(settings)
         if self.mode == "drawing":
             self.drawing_delay.setEnabled(self.drawing_auto_send.isChecked())
+        elif self.mode == "translate":
+            self.translation_delay.setEnabled(self.translation_auto_send.isChecked())
         self.save_hint.setText(
             "Unsaved changes" if self.fields.has_pending else ""
         )
@@ -70,6 +72,8 @@ class ToolSettings(QWidget):
         self.fields.discard_changes()
         if self.mode == "drawing":
             self.drawing_delay.setEnabled(self.drawing_auto_send.isChecked())
+        elif self.mode == "translate":
+            self.translation_delay.setEnabled(self.translation_auto_send.isChecked())
         self.save_hint.setText("")
 
     def set_models(self, model_ids):

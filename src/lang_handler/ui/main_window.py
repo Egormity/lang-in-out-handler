@@ -34,6 +34,8 @@ class MainWindow(QMainWindow):
     stop_requested = Signal(str)
     file_requested = Signal(str, str, bool)
     translate_requested = Signal(str)
+    automatic_translate_requested = Signal(str)
+    translation_invalidated = Signal()
     speech_requested = Signal(str)
     audio_requested = Signal(str, object)
     speech_stop_requested = Signal()
@@ -153,6 +155,8 @@ class MainWindow(QMainWindow):
             page.audio_requested.connect(self.audio_requested)
         self.pages["output"].overlay_requested.connect(self.overlay_requested)
         self.pages["translate"].requested.connect(self._translate)
+        self.pages["translate"].automatic_requested.connect(self.automatic_translate_requested)
+        self.pages["translate"].invalidated.connect(self.translation_invalidated)
         self.pages["translate"].audio_requested.connect(self.audio_requested)
         self.pages["drawing"].requested.connect(self._drawing)
         self.pages["drawing"].options_changed.connect(self._apply_settings_patch)
@@ -278,7 +282,7 @@ class MainWindow(QMainWindow):
 
     def set_source_text(self, mode: str, text: str):
         if mode in ("translate", "tts"):
-            self.pages["translate"].source.text.setPlainText(text)
+            self.pages["translate"].set_source_text(text, automatic=mode == "translate")
 
     def set_drawing_result(self, items: list[str], revision: int):
         self.pages["drawing"].set_result(items, revision)

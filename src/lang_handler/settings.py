@@ -33,8 +33,10 @@ class Settings:
     translation_instructions: str = ""
     tts_instructions: str = ""
     drawing_instructions: str = ""
+    translation_auto_send: bool = True
+    translation_debounce_ms: int = 1000
     drawing_auto_send: bool = True
-    drawing_debounce_ms: int = 1200
+    drawing_debounce_ms: int = 1000
     drawing_pen_width: int = 4
     drawing_canvas_theme: str = "light"
     drawing_on_top: bool = True
