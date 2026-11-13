@@ -50,6 +50,7 @@ class PreferencesPage(QWidget):
         )
         self.reset_all_button.clicked.connect(self.reset_all)
         self.save_hint = label("", True)
+        self.fields.changed.connect(self._draft_changed)
         heading.addWidget(self.save_hint, 1)
         heading.addWidget(self.reset_all_button)
         self.discard_button = button("Discard changes")
@@ -131,6 +132,9 @@ class PreferencesPage(QWidget):
 
     def collect(self):
         return self.fields.collect()
+
+    def _draft_changed(self):
+        self.save_hint.setText("Unsaved changes" if self.fields.has_pending else "")
 
     def reset_all(self):
         self.fields.reset_all()

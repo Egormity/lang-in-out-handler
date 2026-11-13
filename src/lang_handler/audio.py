@@ -82,6 +82,7 @@ class AudioCapture(QObject):
         super().__init__(parent)
         self._stop = threading.Event()
         self._running = threading.Event()
+        self.preserve_timeline = False
         self._thread: threading.Thread | None = None
         self._process: subprocess.Popen | None = None
 
@@ -118,6 +119,12 @@ class AudioCapture(QObject):
             self._thread.join(timeout)
 
     def _emit_audio(self, buffer: bytes, chunked: bool):
+        if chunked and self.preserve_timeline:
+            # Caption context needs real pauses and short word endings. Its
+            # accumulator decides which silent spans do not need an API call.
+            if len(buffer) >= 2:
+                self.chunk.emit(pcm_to_wav(buffer))
+            return
         if len(buffer) < BYTES_PER_SECOND // 10:
             return
         if rms(buffer) < SILENCE_RMS:

@@ -4,12 +4,13 @@ from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QHBoxLayout,
+    QKeySequenceEdit,
     QLineEdit,
     QPlainTextEdit,
     QSpinBox,
@@ -99,8 +100,11 @@ class PreferenceField:
     default: object
 
 
-class PreferenceFields:
+class PreferenceFields(QObject):
+    changed = Signal()
+
     def __init__(self):
+        super().__init__()
         self.fields = {}
         self.reset_buttons = {}
         self.defaults = Settings()
@@ -112,6 +116,20 @@ class PreferenceFields:
         if default is None:
             default = getattr(self.defaults, key)
         self.fields[key] = PreferenceField(read, write, default)
+        if isinstance(widget, NumberInput):
+            change = widget.spin.valueChanged
+        elif isinstance(widget, QCheckBox):
+            change = widget.toggled
+        elif isinstance(widget, QComboBox):
+            change = widget.currentIndexChanged
+        elif isinstance(widget, (QLineEdit, QPlainTextEdit)):
+            change = widget.textChanged
+        elif isinstance(widget, QKeySequenceEdit):
+            change = widget.keySequenceChanged
+        else:
+            change = None
+        if change is not None:
+            change.connect(lambda *args: self.changed.emit())
         row = QWidget()
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)

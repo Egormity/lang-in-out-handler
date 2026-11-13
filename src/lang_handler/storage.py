@@ -141,6 +141,16 @@ class Store:
             )
             return bool(cursor.rowcount)
 
+    def update_history_source(self, record_id: int, source_text: str) -> bool:
+        """Revise a caption block in place; never recreate deleted history."""
+        with self._lock, self._db:
+            cursor = self._db.execute(
+                "UPDATE history SET source_text=?, translated_text='', source_pronunciation='', "
+                "translation_pronunciation='' WHERE id=? AND mode='output'",
+                (source_text, record_id),
+            )
+            return bool(cursor.rowcount)
+
     def list_history(self, limit: int = 100) -> list[dict]:
         """Return complete sessions; the limit counts entries, never individual chunks."""
         with self._lock:

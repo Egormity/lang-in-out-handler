@@ -15,6 +15,7 @@ from lang_handler.ui.main_window import MainWindow
 def drawing_window(qtbot, **settings):
     window = MainWindow(Settings(**settings), True)
     qtbot.addWidget(window)
+    window.settings_saved.connect(window.settings_save_succeeded)
     window.show_page("drawing")
     window.show()
     page = window.pages["drawing"]

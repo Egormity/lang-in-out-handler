@@ -14,6 +14,7 @@ from lang_handler.ui.overlay import CaptionOverlay
 def test_capture_uses_saved_preference_instructions(qtbot):
     window = MainWindow(Settings(), True)
     qtbot.addWidget(window)
+    window.settings_saved.connect(window.settings_save_succeeded)
     order = []
     window.settings_saved.connect(
         lambda prefs: order.append(("settings", prefs.output_instructions))
@@ -83,6 +84,7 @@ def test_preferences_key_mask_and_model_refresh(qtbot):
 def test_preferences_save_applies_instructions_to_all_modes(qtbot):
     window = MainWindow(Settings(), True)
     qtbot.addWidget(window)
+    window.settings_saved.connect(window.settings_save_succeeded)
     preferences = window.pages["translate"].tool_settings
     preferences.instructions["translation_instructions"].setPlainText("Use polite Russian.")
     preferences.target_language.setCurrentText("Russian")
@@ -285,6 +287,7 @@ def test_key_save_failure_keeps_masked_candidate_for_retry(qtbot):
 def test_proxy_preferences_round_trip_and_pending_connection_value(qtbot):
     window = MainWindow(Settings(api_proxy_url="http://proxy.example:8080"), True)
     qtbot.addWidget(window)
+    window.settings_saved.connect(window.settings_save_succeeded)
     preferences = window.pages["preferences"]
     assert preferences.api_proxy_url.text() == "http://proxy.example:8080"
     preferences.api_proxy_url.setText("  socks5://proxy.example:1080  ")
@@ -306,6 +309,7 @@ def test_proxy_preferences_round_trip_and_pending_connection_value(qtbot):
 def test_translate_contains_speech_for_both_text_panes(qtbot):
     window = MainWindow(Settings(), True)
     qtbot.addWidget(window)
+    window.settings_saved.connect(window.settings_save_succeeded)
     assert "tts" not in window.pages
     assert set(window.pages) == {
         "input",
@@ -339,6 +343,7 @@ def test_translate_contains_speech_for_both_text_panes(qtbot):
 def test_caption_translation_option_updates_generation_and_visibility(qtbot):
     window = MainWindow(Settings(), True)
     qtbot.addWidget(window)
+    window.settings_saved.connect(window.settings_save_succeeded)
     saved = QSignalSpy(window.settings_saved)
     page = window.pages["output"]
     panel = page.tool_settings

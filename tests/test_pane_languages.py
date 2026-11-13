@@ -50,6 +50,7 @@ def test_header_choices_save_scoped_changes_and_reload_across_pages(qtbot, tmp_p
     window = MainWindow(Settings(), True)
     qtbot.addWidget(window)
     window.settings_saved.connect(store.save_settings)
+    window.settings_saved.connect(window.settings_save_succeeded)
     captions = window.pages["output"]
     requested = QSignalSpy(captions.options_changed)
     captions.source_language.setCurrentText("Russian")

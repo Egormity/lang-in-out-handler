@@ -38,6 +38,7 @@ class ToolSettings(QWidget):
         self.reset_button = button("Reset section")
         self.reset_button.clicked.connect(self.reset_section)
         self.save_hint = label("", True)
+        self.fields.changed.connect(self._draft_changed)
         self.save_button = button("Save", True)
         self.save_button.clicked.connect(lambda: self.saved.emit(self.collect()))
         self.discard_button = button("Discard changes")
@@ -52,6 +53,9 @@ class ToolSettings(QWidget):
     def collect(self):
         """Return only owned fields so another page's edits cannot be overwritten."""
         return self.fields.collect()
+
+    def _draft_changed(self):
+        self.save_hint.setText("Unsaved changes" if self.fields.has_pending else "")
 
     def update_settings(self, settings):
         self.settings = settings

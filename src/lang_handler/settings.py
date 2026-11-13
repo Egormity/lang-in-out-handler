@@ -43,6 +43,7 @@ class Settings:
     voice: str = "coral"
     input_chunk_seconds: float = 5.0
     output_chunk_seconds: float = 5.0
+    output_context_seconds: int = 20
     input_chunked: bool = False
     output_chunked: bool = True
     translation_enabled: bool = True

@@ -9,6 +9,7 @@ from lang_handler.ui.main_window import MainWindow
 def test_saving_one_tool_preserves_other_tool_and_global_drafts(qtbot):
     window = MainWindow(Settings(drawing_language="en", translation_provider="openai"), True)
     qtbot.addWidget(window)
+    window.settings_saved.connect(window.settings_save_succeeded)
     drawing = window.pages["drawing"].tool_settings
     translation = window.pages["translate"].tool_settings
     global_settings = window.pages["preferences"]
@@ -29,6 +30,7 @@ def test_saving_one_tool_preserves_other_tool_and_global_drafts(qtbot):
 def test_shared_translation_settings_refresh_both_tools_without_losing_drafts(qtbot):
     window = MainWindow(Settings(), True)
     qtbot.addWidget(window)
+    window.settings_saved.connect(window.settings_save_succeeded)
     captions = window.pages["output"].tool_settings
     translation = window.pages["translate"].tool_settings
     translation.instructions["translation_instructions"].setPlainText("Unsaved translation style")
@@ -47,6 +49,7 @@ def test_global_reset_all_stages_all_sections_then_global_save_applies(qtbot):
         target_language="Russian", output_chunk_seconds=9, voice="cedar",
     ), True)
     qtbot.addWidget(window)
+    window.settings_saved.connect(window.settings_save_succeeded)
     preferences = window.pages["preferences"]
     preferences.reset_all_button.click()
     assert window.settings.drawing_language == "en"

@@ -43,6 +43,7 @@ def test_drawing_header_language_preserves_ink_and_cancels_old_recognition(qtbot
 def test_handwriting_header_saves_immediately_and_tracks_saved_settings(qtbot):
     window = MainWindow(Settings(drawing_auto_send=False), True)
     qtbot.addWidget(window)
+    window.settings_saved.connect(window.settings_save_succeeded)
     page = window.pages["drawing"]
     saved = QSignalSpy(window.settings_saved)
     page.language.setCurrentText("Russian")

@@ -1,5 +1,6 @@
 """Coordinate desktop controls, audio capture, background API work, and history."""
 
+import sqlite3
 import subprocess
 import sys
 from copy import deepcopy
@@ -45,6 +46,7 @@ class Controller(QObject):
         self.caption_history = {}
         self.history_sessions = {}
         self.captures = {mode: AudioCapture(self) for mode in ("input", "output")}
+        self.captures["output"].preserve_timeline = True
         self.recording_cues = RecordingCues(self)
         self.captures["input"].started.connect(self.recording_cues.recording_started)
         self.captures["input"].stopped.connect(self.recording_cues.recording_stopped)
@@ -58,6 +60,7 @@ class Controller(QObject):
         self.pipeline.transcript.connect(self._transcript)
         self.pipeline.revisions.connect(self._revisions)
         self.pipeline.source_ready.connect(self.remember_segment)
+        self.pipeline.source_revised.connect(self.revise_caption_source)
         self.pipeline.error.connect(self._pipeline_error)
         self.pipeline.pending_changed.connect(self._pending)
         window.capture_requested.connect(self.start)
@@ -117,15 +120,27 @@ class Controller(QObject):
 
     def save_settings(self, settings):
         if any(not 2 <= value <= 30 for value in (settings.input_chunk_seconds, settings.output_chunk_seconds)):
+            self.window.settings_save_failed()
             self.fail("Chunk length must be between 2 and 30 seconds.")
-            return
-        self.settings = deepcopy(settings)
+            return False
+        if not 0 <= settings.output_context_seconds <= 30:
+            self.window.settings_save_failed()
+            self.fail("Recognition context must be between 0 and 30 seconds.")
+            return False
+        committed = deepcopy(settings)
+        try:
+            self.store.save_settings(committed)
+        except (OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            self.window.settings_save_failed()
+            self.fail(f"Could not save settings: {exc}")
+            return False
+        self.settings = committed
         self.pipeline.update_settings(self.settings)
-        self.store.save_settings(self.settings)
         self.overlay.update_settings(self.settings)
-        self.window.update_settings(self.settings)
+        self.window.settings_save_succeeded(self.settings)
         if self.applied_shortcuts != self.settings.shortcuts:
             self.apply_shortcuts()
+        return True
 
     def save_key(self, key):
         try:
@@ -209,6 +224,8 @@ class Controller(QObject):
             self.accept_audio[mode] = True
             if mode == "input":
                 self.dictation.reset()
+            else:
+                capture.preserve_timeline = bool(chunked and self.settings.output_context_seconds)
             capture.start(source, chunked, getattr(self.settings, f"{mode}_chunk_seconds"))
             if mode == "output":
                 self.show_overlay()
@@ -288,6 +305,18 @@ class Controller(QObject):
             # Only the rolling context can be revised; keep a generous bounded map.
             while len(self.caption_history) > 512:
                 self.caption_history.pop(next(iter(self.caption_history)))
+        self.refresh_history()
+
+    def revise_caption_source(self, segment_id, text):
+        for source, translated in (
+            (self.window.pages["output"].results, self.window.pages["output"].translations),
+            (self.overlay.transcript, self.overlay.translation),
+        ):
+            if source.revise(segment_id, text):
+                translated.upsert(segment_id, "", "")
+        record_id = self.caption_history.get(segment_id)
+        if record_id is not None:
+            self.store.update_history_source(record_id, text)
         self.refresh_history()
 
     def _revisions(self, revisions):

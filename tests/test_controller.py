@@ -90,12 +90,18 @@ def controller(qapp, qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr("lang_handler.controller.GlobalShortcuts", FakeShortcuts)
     monkeypatch.setattr("lang_handler.dictation.deliver_transcript", lambda *args, **kwargs: "Copied.")
     monkeypatch.setattr("lang_handler.pipeline.OpenAIService", FakeService)
+    monkeypatch.setattr("lang_handler.pipeline.transcribe_file_once",
+                        lambda service, audio, model, language, instructions, **kwargs:
+                        service.transcribe(audio, model, language, instructions))
     monkeypatch.setattr("lang_handler.workflows.OpenAIService", FakeService)
     monkeypatch.setattr("lang_handler.text_translation.OpenAIService", FakeService)
     monkeypatch.setattr("lang_handler.file_import.OpenAIService", FakeService)
+    monkeypatch.setattr("lang_handler.file_import.transcribe_file_once",
+                        lambda service, audio, model, language, instructions, **kwargs:
+                        service.transcribe(audio, model, language, instructions))
     monkeypatch.setattr("lang_handler.workflows.play_audio", lambda path: FakePlayer())
     store = Store(tmp_path)
-    settings = Settings(input_delivery="copy", translation_provider="openai", translation_auto_send=False,
+    settings = Settings(output_context_seconds=0, input_delivery="copy", translation_provider="openai", translation_auto_send=False,
                         drawing_provider="openai", drawing_language="")
     store.save_settings(settings)
     window = MainWindow(settings, api_key_present=True)

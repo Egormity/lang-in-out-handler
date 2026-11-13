@@ -54,6 +54,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings = settings
         self._reset_all_pending = False
+        self._settings_save_editor = None
+        self._settings_save_resets_all = False
         self.setWindowTitle("Lang In/Out")
         self.resize(1120, 780)
         self.setMinimumSize(850, 620)
@@ -165,7 +167,11 @@ class MainWindow(QMainWindow):
         self.pages["drawing"].speech_stop_requested.connect(self.speech_stop_requested)
         self.pages["history"].audio_requested.connect(self.audio_requested)
         for mode in ("input", "output", "translate", "drawing"):
-            self.pages[mode].settings_saved.connect(self._apply_settings_patch)
+            self.pages[mode].settings_saved.connect(
+                lambda patch, key=mode: self._apply_settings_patch(
+                    patch, editor=self.pages[key].tool_settings
+                )
+            )
             self.pages[mode].settings_requested.connect(lambda key=mode: self.show_tool_settings(key))
         self.pages["translate"].options_changed.connect(self._apply_settings_patch)
         preferences = self.pages["preferences"]
@@ -182,10 +188,32 @@ class MainWindow(QMainWindow):
         """Quick controls save immediately; settings pages keep drafts until Save."""
         return self.settings
 
-    def _apply_settings_patch(self, patch):
+    def _apply_settings_patch(self, patch, *, editor=None):
         settings = replace(self.settings, **patch)
-        self.update_settings(settings)
+        self._settings_save_editor = editor
+        self._settings_save_resets_all = editor is self.pages["preferences"] and self._reset_all_pending
         self.settings_saved.emit(settings)
+
+    def settings_save_succeeded(self, settings):
+        self.update_settings(settings)
+        editor = self._settings_save_editor
+        if self._settings_save_resets_all:
+            self._reset_all_pending = False
+        self._settings_save_editor = None
+        self._settings_save_resets_all = False
+        if editor is not None:
+            editor.save_hint.setText("Saved")
+            self.set_status("Settings saved.")
+
+    def settings_save_failed(self):
+        # Quick selectors may have already moved; restore committed choices.
+        # PreferenceFields.update keeps independently edited settings-page drafts.
+        self.update_settings(self.settings)
+        editor = self._settings_save_editor
+        self._settings_save_editor = None
+        self._settings_save_resets_all = False
+        if editor is not None:
+            editor.save_hint.setText("Not saved. Your changes are kept.")
 
     def _stage_all_defaults(self):
         self._reset_all_pending = True
@@ -215,8 +243,7 @@ class MainWindow(QMainWindow):
     def _save_preferences(self, patch):
         if self._reset_all_pending:
             patch = {**Settings().to_dict(), **patch}
-            self._reset_all_pending = False
-        self._apply_settings_patch(patch)
+        self._apply_settings_patch(patch, editor=self.pages["preferences"])
 
     def show_page(self, mode: str):
         mode = "translate" if mode == "tts" else mode

@@ -13,6 +13,7 @@ from .network import proxy_url
 from .prompts import builtin_instructions, single_prompt, source_input
 from .reasoning import reasoning_options
 from .results import CaptionRevision, TranslationResult
+from .transcription_context import recognized_text, transcription_prompt
 
 MAX_AUDIO_BYTES = 25 * 1024 * 1024
 
@@ -47,6 +48,8 @@ class OpenAIService:
         language: str = "",
         instructions: str = "",
         filename: str = "audio.wav",
+        *,
+        context: str = "",
     ) -> str:
         if not audio:
             raise ServiceError("There is no audio to transcribe.")
@@ -60,7 +63,7 @@ class OpenAIService:
             "model": model,
             "file": (Path(filename).name, audio),
             "response_format": "json",
-            "prompt": single_prompt("input_instructions", instructions),
+            "prompt": transcription_prompt(instructions, context),
         }
         if language and language.lower() != "auto":
             if model.startswith("gpt-transcribe"):
@@ -71,7 +74,7 @@ class OpenAIService:
                 options["language"] = language.strip()
         try:
             result = self._client.audio.transcriptions.create(**options)
-            return result.text.strip()
+            return recognized_text(result.text)
         except Exception as error:  # noqa: BLE001 - never expose SDK request headers in the UI
             raise service_error(error, self._key) from None
 

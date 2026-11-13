@@ -25,6 +25,15 @@ def capture(page, settings, layout):
         page, form, "Chunk duration", f"{mode}_chunk_seconds",
         minimum=2, maximum=30, step=0.5, decimals=1, suffix=" seconds",
     )
+    if mode == "output":
+        context = number(page, form, "Recognition context", "output_context_seconds",
+                         minimum=0, maximum=30, step=5, suffix=" seconds")
+        context.setToolTip(
+            "Recheck recent audio so earlier words can change. Longer context uses more "
+            "transcription API audio. Set 0 for independent chunks. At least one chunk is kept."
+        )
+        context.setEnabled(settings.output_chunked)
+        page.output_chunked.toggled.connect(context.setEnabled)
     instructions(page, settings, form, f"{mode}_instructions")
     if mode == "input":
         delivery(page, settings, layout)

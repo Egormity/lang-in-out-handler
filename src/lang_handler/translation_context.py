@@ -14,6 +14,9 @@ def translation_configuration(settings):
 
 
 def next_context(context, segment, provider):
+    if any(identifier == segment[0] for identifier, _ in context):
+        return [segment if identifier == segment[0] else (identifier, text)
+                for identifier, text in context]
     if provider != "google":
         return trim_context([*context, segment])
     # Google translates a continuous passage, without stable per-chunk IDs.

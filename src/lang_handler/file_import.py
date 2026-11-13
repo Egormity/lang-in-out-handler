@@ -8,6 +8,9 @@ from PySide6.QtCore import QObject
 
 from .api import OpenAIService
 from .audio import audio_file_chunks
+from .caption_recognition import GrowingCaptionWindow
+from .errors import ServiceError
+from .file_transcription import transcribe_file_once
 from .google_api import GoogleService
 from .translation_context import next_context, translation_configuration
 
@@ -43,39 +46,81 @@ class FileImports(QObject):
             completed = 0
             context = []
             context_epoch = self.context_epoch
+            recognizer = (GrowingCaptionWindow(
+                self.c.pipeline.allocate_segment_id, limit_seconds=settings.output_context_seconds
+            ) if mode == "output" and chunked and settings.output_context_seconds else None)
+            published = None
             try:
                 length = getattr(settings, f"{mode}_chunk_seconds") if chunked else None
                 for audio in audio_file_chunks(Path(path), length):
                     if cancel.is_set():
                         break
-                    text = service.transcribe(
-                        audio, model, getattr(settings, f"{mode}_language"),
-                        getattr(settings, f"{mode}_instructions"),
-                    )
-                    if cancel.is_set():
-                        break
+                    window = None
+                    if context_epoch != self.context_epoch:
+                        context = []
+                        context_epoch = self.context_epoch
+                        if recognizer is not None:
+                            recognizer.reset()
+                    try:
+                        if not chunked:
+                            text = transcribe_file_once(
+                                service, audio, model, getattr(settings, f"{mode}_language"),
+                                getattr(settings, f"{mode}_instructions"), cancel=cancel,
+                                progress=lambda done, total: progress(
+                                    ("status", f"Transcribing file… {done}/{total}")
+                                ),
+                            )
+                        else:
+                            if recognizer is not None:
+                                window = recognizer.accept(audio)
+                                if window is None:
+                                    continue
+                                audio = window.audio
+                            text = service.transcribe(
+                                audio, model, getattr(settings, f"{mode}_language"),
+                                getattr(settings, f"{mode}_instructions"),
+                                **({"context": window.prior_context} if window is not None else {}),
+                            )
+                        if cancel.is_set():
+                            break
+                        if window is not None and not recognizer.commit(window, text):
+                            continue
+                    except ServiceError:
+                        if mode == "output" and context_epoch != self.context_epoch:
+                            continue
+                        raise
                     if not text.strip():
                         continue
-                    segment_id = self.c.pipeline.allocate_segment_id()
-                    progress(("source", segment_id, text))
-                    completed += 1
+                    segment_id = window.block_id if window is not None else self.c.pipeline.allocate_segment_id()
+                    if window is not None and segment_id == published:
+                        progress(("source_revision", context_epoch, segment_id, text))
+                    else:
+                        progress(("source", context_epoch, segment_id, text))
+                        published = segment_id
+                        completed += 1
                     if (mode == "output" and settings.translation_enabled
+                            and context_epoch == self.context_epoch
                             and translation_configuration(settings) == translation_configuration(self.c.settings)):
-                        if context_epoch != self.context_epoch:
-                            context = []
-                            context_epoch = self.context_epoch
                         context = next_context(context, (segment_id, text), settings.translation_provider)
-                        if settings.translation_provider == "google":
-                            if translator is None:
-                                translator = GoogleService(proxy=settings.api_proxy_url or None)
-                            revisions = translator.revise_translation(context, settings.target_language)
-                        else:
-                            revisions = service.revise_captions(
-                                context, settings.translation_model, settings.target_language,
-                                settings.translation_instructions, settings.translation_reasoning,
-                            )
+                        try:
+                            if settings.translation_provider == "google":
+                                if translator is None:
+                                    translator = GoogleService(proxy=settings.api_proxy_url or None)
+                                revisions = translator.revise_translation(context, settings.target_language)
+                            else:
+                                revisions = service.revise_captions(
+                                    context, settings.translation_model, settings.target_language,
+                                    settings.translation_instructions, settings.translation_reasoning,
+                                )
+                        except ServiceError:
+                            if context_epoch != self.context_epoch:
+                                continue
+                            raise
                         if not cancel.is_set():
-                            progress(("revisions", revisions))
+                            progress(("revisions", context_epoch, revisions))
+                if (not completed and not cancel.is_set()
+                        and (mode != "output" or context_epoch == self.context_epoch)):
+                    raise ServiceError("No speech was recognized in this file. Check the audio, language, or transcription model.")
                 return completed
             finally:
                 service.close()
@@ -88,14 +133,26 @@ class FileImports(QObject):
         def progress(event):
             if not current():
                 return
+            # Clear does not cancel the import. Results from audio that was already
+            # in flight must not repopulate the newly cleared caption document.
+            if (mode == "output" and event[0] != "status"
+                    and event[1] != self.context_epoch):
+                return
             if event[0] == "source":
-                _, segment_id, text = event
+                _, _, segment_id, text = event
                 self.c.remember_segment(mode, segment_id, text, model, session_id=session_id)
                 self.c.window.append_result(mode, text, segment_id=segment_id)
                 if mode == "output":
                     self.c.overlay.append_caption(text, segment_id=segment_id)
-            elif translation_configuration(settings) == translation_configuration(self.c.settings):
-                self.c._revisions(event[1])
+            elif event[0] == "source_revision":
+                self.c.revise_caption_source(event[2], event[3])
+            elif event[0] == "status":
+                self.c.status(event[1])
+                if mode == "output":
+                    self.c.overlay.set_status(event[1])
+            elif (event[0] == "revisions"
+                    and translation_configuration(settings) == translation_configuration(self.c.settings)):
+                self.c._revisions(event[2])
 
         def done():
             if self.generations.get(mode) != generation:
@@ -105,7 +162,7 @@ class FileImports(QObject):
 
         def success(count):
             if self.generations.get(mode) == generation:
-                self.c.status(f"File complete: {count} segment(s).")
+                self.c.status("File transcription complete.")
                 if mode == "output":
                     self.c.overlay.set_status("File complete.")
 

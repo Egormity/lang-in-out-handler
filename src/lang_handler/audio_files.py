@@ -64,7 +64,8 @@ def ffmpeg_binary() -> str:
 
 def audio_file_chunks(path: Path, seconds: float | None = None):
     """Decode media to 16 kHz mono WAV requests; files over ten minutes need chunks."""
-    from .audio import BYTES_PER_SECOND, MAX_RECORD_SECONDS, pcm_to_wav
+    from .audio import MAX_RECORD_SECONDS
+    from .audio_windows import BYTES_PER_SECOND, pcm_to_wav
 
     path = Path(path).expanduser().resolve(strict=True)
     if not path.is_file():
