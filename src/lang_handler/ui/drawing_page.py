@@ -178,6 +178,7 @@ class DrawingPage(QWidget):
         self.settings = settings
         self.tool_settings.update_settings(settings)
         self.canvas.pen_width = settings.drawing_pen_width
+        self.canvas.set_theme(settings.drawing_canvas_theme)
         if self.floating.pin_control.desired != settings.drawing_on_top:
             self.floating.pin_control.request(settings.drawing_on_top)
         if was_enabled and not settings.drawing_auto_send:

@@ -28,6 +28,7 @@ class DrawingWorkspace(QWidget):
         tools.addStretch()
         layout.addLayout(tools)
         self.canvas = DrawingCanvas()
+        self.canvas.set_theme(settings.drawing_canvas_theme)
         self.undo_shortcut = QShortcut(QKeySequence("Ctrl+Z"), self)
         self.redo_shortcut = QShortcut(QKeySequence("Ctrl+Shift+Z"), self)
         for shortcut in (self.undo_shortcut, self.redo_shortcut):

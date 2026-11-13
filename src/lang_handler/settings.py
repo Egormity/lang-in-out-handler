@@ -25,6 +25,7 @@ class Settings:
     drawing_auto_send: bool = True
     drawing_debounce_ms: int = 1200
     drawing_pen_width: int = 4
+    drawing_canvas_theme: str = "light"
     drawing_on_top: bool = True
     voice: str = "coral"
     input_chunk_seconds: float = 5.0

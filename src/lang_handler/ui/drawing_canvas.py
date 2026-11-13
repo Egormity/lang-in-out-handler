@@ -28,6 +28,7 @@ class DrawingCanvas(TabletInputMixin, QWidget):
         self.revision = 0
         self.is_drawing = False
         self.pen_width = 4
+        self.theme = "light"
         self.initialize_input()
         self.setMinimumSize(350, 210)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -116,12 +117,19 @@ class DrawingCanvas(TabletInputMixin, QWidget):
         self._stroke_source = None
         self._changed()
 
-    def _paint_strokes(self, painter, width, height):
-        painter.fillRect(0, 0, width, height, QColor("white"))
+    def set_theme(self, theme):
+        """Appearance changes leave drawing history and recognition revisions intact."""
+        self.theme = theme if theme in {"light", "dark"} else "light"
+        self.update()
+
+    def _paint_strokes(self, painter, width, height, *, preview=False):
+        # Keep API snapshots canonical so appearance never changes recognition input.
+        dark = preview and self.theme == "dark"
+        painter.fillRect(0, 0, width, height, QColor("#222725" if dark else "white"))
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         for pen_width, points in self.strokes:
             pen = QPen(
-                QColor("#111111"),
+                QColor("#f0f3ef" if dark else "#111111"),
                 pen_width,
                 Qt.PenStyle.SolidLine,
                 Qt.PenCapStyle.RoundCap,
@@ -136,9 +144,9 @@ class DrawingCanvas(TabletInputMixin, QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        self._paint_strokes(painter, self.width(), self.height())
+        self._paint_strokes(painter, self.width(), self.height(), preview=True)
         if self.is_blank:
-            painter.setPen(QColor("#99a3a8"))
+            painter.setPen(QColor("#a4b0a9" if self.theme == "dark" else "#6f7a74"))
             painter.drawText(
                 self.rect(), Qt.AlignmentFlag.AlignCenter, "Write here with your mouse or pen"
             )

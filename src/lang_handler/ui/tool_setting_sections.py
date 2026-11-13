@@ -99,6 +99,17 @@ def handwriting(page, settings, layout):
     page.drawing_auto_send.toggled.connect(page.drawing_delay.setEnabled)
     instructions(page, settings, form, "drawing_instructions")
     form = group("Canvas", layout)
+    page.drawing_canvas_theme = selection_combo([], "")
+    page.drawing_canvas_theme.addItem("Light", "light")
+    page.drawing_canvas_theme.addItem("Dark", "dark")
+    page.drawing_canvas_theme.setAccessibleName("Canvas theme")
+    page.fields.add(
+        form, "Canvas theme", "drawing_canvas_theme", page.drawing_canvas_theme,
+        read=page.drawing_canvas_theme.currentData,
+        write=lambda value: page.drawing_canvas_theme.setCurrentIndex(
+            max(0, page.drawing_canvas_theme.findData(value))
+        ),
+    )
     number(page, form, "Pen width", "drawing_pen_width", minimum=1, maximum=16, suffix=" px")
     toggle(page, form, "Keep on top", "drawing_on_top")
     form.addRow(label("When automatic recognition is off, use Send to transcribe on the canvas.", True))
