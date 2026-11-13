@@ -23,7 +23,7 @@ def clear_proxy_environment(monkeypatch):
 def system_result(monkeypatch, value):
     calls = []
 
-    def resolve():
+    def resolve(target=None):
         calls.append(True)
         return value
 
@@ -100,7 +100,7 @@ def test_desktop_launch_uses_system_proxy_and_realtime_auth(monkeypatch):
 
 def test_automatic_resolution_rechecks_changed_desktop_settings(monkeypatch):
     values = iter(["http://first.invalid:7897", "socks5://second.invalid:1080", None])
-    resolve = lambda: next(values)
+    resolve = lambda target=None: next(values)
     monkeypatch.setattr(system_proxy, "desktop_proxy", resolve)
     monkeypatch.setattr(network, "desktop_proxy", resolve, raising=False)
     assert network.proxy_url() == "http://first.invalid:7897"
@@ -196,3 +196,14 @@ def test_non_linux_does_not_spawn_the_gnome_helper(monkeypatch):
     calls = helper_result(monkeypatch, {"ok": True, "proxies": ["http://must-not-read.invalid"]})
     assert system_proxy.desktop_proxy() is None
     assert calls == []
+
+
+def test_google_uses_its_own_proxy_target_and_exclusions(monkeypatch):
+    monkeypatch.setenv("HTTPS_PROXY", "http://environment.invalid:8080")
+    monkeypatch.setenv("NO_PROXY", "translate.googleapis.com")
+    assert network.proxy_url(target="https://translate.googleapis.com/translate_a/single") is None
+    assert network.proxy_url(target="https://www.google.com/inputtools/request") == "http://environment.invalid:8080"
+    monkeypatch.delenv("HTTPS_PROXY")
+    calls = helper_result(monkeypatch, {"ok": True, "proxies": ["direct://"]})
+    assert network.proxy_url(target="https://www.google.com/inputtools/request") is None
+    assert calls[0][0][2] == "https://www.google.com/inputtools/request"

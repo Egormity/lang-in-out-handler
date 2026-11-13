@@ -8,11 +8,12 @@ from .drawing_window import DrawingWindow
 from .drawing_workspace import DrawingWorkspace
 from .icons import icon, icon_button
 from .language_selectors import select_language, source_language_selector
+from .provider_controls import set_handwriting_language_provider
 from .tool_settings import ToolSettings, ToolSettingsView
 
 
 class DrawingPage(QWidget):
-    requested = Signal(bytes, int)
+    requested = Signal(object, int)
     cancel_requested = Signal()
     speech_requested = Signal(str)
     audio_requested = Signal(str, object)
@@ -44,6 +45,7 @@ class DrawingPage(QWidget):
         self.language = source_language_selector(settings.drawing_language)
         self.language.setAccessibleName("Handwriting language")
         self.language.setToolTip("Choose the written language, or detect it automatically.")
+        set_handwriting_language_provider(self.language, settings.drawing_provider)
         self.language.currentIndexChanged.connect(
             lambda: self.options_changed.emit({"drawing_language": language_value(self.language)})
         )
@@ -103,6 +105,7 @@ class DrawingPage(QWidget):
         self.undo_button.setEnabled(False)
         self.redo_button.setEnabled(False)
         self.clear_button.setEnabled(False)
+        self._update_language_requirement()
 
     def show_floating(self):
         if not self.is_floating:
@@ -141,6 +144,7 @@ class DrawingPage(QWidget):
         self.clear_button.setEnabled(not blank)
         self._update_recognize_button()
         self.result.clear()
+        self._update_language_requirement()
         if blank:
             self.cancel_requested.emit()
         elif not self.canvas.is_drawing:
@@ -151,6 +155,7 @@ class DrawingPage(QWidget):
             self.settings.drawing_auto_send
             and not self.canvas.is_blank
             and not self.canvas.is_drawing
+            and not self._language_required()
         ):
             self.timer.start(self.settings.drawing_debounce_ms)
 
@@ -158,7 +163,23 @@ class DrawingPage(QWidget):
         self.timer.stop()
         if self.canvas.is_blank or self.canvas.is_drawing:
             return
-        self.requested.emit(self.canvas.snapshot(), self.canvas.revision)
+        if self._language_required():
+            self._update_language_requirement()
+            return
+        self.requested.emit(self.recognition_snapshot(), self.canvas.revision)
+
+    def recognition_snapshot(self):
+        return (self.canvas.ink_snapshot() if self.settings.drawing_provider == "google"
+                else self.canvas.snapshot())
+
+    def _language_required(self):
+        return (self.settings.drawing_provider == "google"
+                and self.settings.drawing_language.strip().casefold() in {"", "auto", "auto detect"})
+
+    def _update_language_requirement(self):
+        if self._language_required():
+            self.result.empty.setText("Choose a handwriting language in Draw to use Google.")
+            self.result.empty.show()
 
     def set_result(self, items, revision):
         if revision == self.canvas.revision:
@@ -170,14 +191,17 @@ class DrawingPage(QWidget):
 
     def _update_recognize_button(self):
         has_ink = not self.canvas.is_blank
-        recognizing = self.busy and has_ink
+        language_required = self._language_required()
+        recognizing = self.busy and has_ink and not language_required
         self.send_button.setText("Recognizing…" if recognizing else "Recognize")
         self.send_button.setAccessibleName(
             "Recognizing handwriting" if recognizing else "Send canvas to transcribe"
         )
         # Keep manual submission available for the newest drawing while an older
         # revision is running; the handwriting worker coalesces that request.
-        self.send_button.setEnabled(has_ink and not self.canvas.is_drawing)
+        self.send_button.setEnabled(
+            has_ink and not self.canvas.is_drawing and not language_required
+        )
 
     def set_speech_active(self, active):
         self.result.set_speech_active(active)
@@ -186,17 +210,20 @@ class DrawingPage(QWidget):
         was_enabled = self.settings.drawing_auto_send
         delay_changed = self.settings.drawing_debounce_ms != settings.drawing_debounce_ms
         language_changed = self.settings.drawing_language != settings.drawing_language
+        provider_changed = self.settings.drawing_provider != settings.drawing_provider
         self.settings = settings
         self.tool_settings.update_settings(settings)
         select_language(self.language, settings.drawing_language, source=True)
+        set_handwriting_language_provider(self.language, settings.drawing_provider)
         self.canvas.pen_width = settings.drawing_pen_width
         self.canvas.set_theme(settings.drawing_canvas_theme)
         if self.floating.pin_control.desired != settings.drawing_on_top:
             self.floating.pin_control.request(settings.drawing_on_top)
-        if language_changed:
+        if language_changed or provider_changed:
             self.timer.stop()
             self.cancel_requested.emit()
             self.result.clear()
+            self._update_language_requirement()
             self._schedule()
         if was_enabled and not settings.drawing_auto_send:
             self.timer.stop()
@@ -205,3 +232,4 @@ class DrawingPage(QWidget):
             delay_changed and self.timer.isActive()
         ):
             self._schedule()
+        self._update_recognize_button()

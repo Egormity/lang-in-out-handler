@@ -94,7 +94,8 @@ def controller(qapp, qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr("lang_handler.file_import.OpenAIService", FakeService)
     monkeypatch.setattr("lang_handler.workflows.play_audio", lambda path: FakePlayer())
     store = Store(tmp_path)
-    settings = Settings(input_delivery="copy")
+    settings = Settings(input_delivery="copy", translation_provider="openai",
+                        drawing_provider="openai", drawing_language="")
     store.save_settings(settings)
     window = MainWindow(settings, api_key_present=True)
     overlay = CaptionOverlay(settings)

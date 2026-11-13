@@ -23,6 +23,7 @@ class ToolSettings(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         if mode in ("input", "output"):
             tool_setting_sections.capture(self, settings, layout)
         elif mode == "translate":

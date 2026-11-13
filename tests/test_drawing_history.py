@@ -183,7 +183,7 @@ def test_drawing_shortcuts_leave_settings_and_translation_text_undo_alone(qtbot)
 def test_redo_invalidates_old_recognition_and_debounces_latest_snapshot(qtbot):
     from dataclasses import replace
 
-    _, page = drawing_window(qtbot, drawing_debounce_ms=200)
+    _, page = drawing_window(qtbot, drawing_provider="openai", drawing_debounce_ms=200)
     requested = QSignalSpy(page.requested)
     draw(page.canvas)
     old_revision = page.canvas.revision

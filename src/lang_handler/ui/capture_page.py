@@ -26,6 +26,7 @@ class CapturePage(QWidget):
     settings_requested = Signal()
     speech_requested = Signal(str)
     audio_requested = Signal(str, object)
+    cleared = Signal()
 
     def __init__(self, mode, settings):
         super().__init__()
@@ -114,6 +115,7 @@ class CapturePage(QWidget):
         self.results.clear()
         if self.translations:
             self.translations.clear()
+        self.cleared.emit()
 
     def apply_settings(self, settings):
         self.settings = settings

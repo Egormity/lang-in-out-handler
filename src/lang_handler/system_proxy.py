@@ -43,10 +43,10 @@ def _lookup(url: str) -> dict:
         raise ServiceError("Could not read the system proxy settings. Try again.") from None
 
 
-def desktop_proxy() -> str | None:
+def desktop_proxy(target: str = OPENAI_PROXY_TARGET) -> str | None:
     if sys.platform != "linux":
         return None
-    result = _lookup(OPENAI_PROXY_TARGET)
+    result = _lookup(target)
     if result.get("unavailable"):
         return None
     proxies = result.get("proxies")

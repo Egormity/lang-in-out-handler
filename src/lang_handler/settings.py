@@ -15,6 +15,8 @@ _OLD_STOCK_INSTRUCTIONS = {
 @dataclass
 class Settings:
     api_proxy_url: str = ""
+    drawing_provider: str = "google"
+    translation_provider: str = "google"
     input_model: str = "gpt-transcribe"
     output_model: str = "gpt-transcribe"
     translation_model: str = "gpt-6-luna"
@@ -23,7 +25,7 @@ class Settings:
     input_language: str = ""
     output_language: str = "ja"
     target_language: str = "English"
-    drawing_language: str = ""
+    drawing_language: str = "ja"
     translation_reasoning: str = "medium"
     drawing_reasoning: str = "low"
     input_instructions: str = ""

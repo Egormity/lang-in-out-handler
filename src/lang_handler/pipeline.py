@@ -7,8 +7,9 @@ from itertools import count
 from PySide6.QtCore import QObject, Signal
 
 from .api import OpenAIService
-from .caption_context import trim_context
+from .google_api import GoogleService
 from .jobs import Jobs
+from .translation_context import next_context, translation_configuration
 
 
 class CaptionPipeline(QObject):
@@ -28,7 +29,15 @@ class CaptionPipeline(QObject):
         self.context = []
         self.untranslated = set()
         self.context_signature = None
+        self.translation_settings = None
         self.closed = False
+
+    def update_settings(self, settings):
+        previous = self.translation_settings
+        self.translation_settings = deepcopy(settings)
+        if previous is not None and translation_configuration(previous) != translation_configuration(settings):
+            self._reset_context()
+            self._notify("output")
 
     def allocate_segment_id(self):
         """Allocate one identity shared by live recognition and file import workers."""
@@ -37,6 +46,11 @@ class CaptionPipeline(QObject):
     def begin_session(self, mode):
         """Start fresh context after the previous recording has finished draining."""
         self.abort(mode)
+
+    def clear_translation_context(self):
+        """Clearing visible captions starts a fresh passage without stopping audio."""
+        self._reset_context()
+        self._notify("output")
 
     def enqueue(self, mode, audio, settings, key):
         if self.closed:
@@ -114,16 +128,14 @@ class CaptionPipeline(QObject):
         self.jobs.submit(work, success, failure, finished=done)
 
     def _schedule_revision(self, segment_id, text, settings, key):
-        signature = (
-            settings.translation_enabled, settings.translation_model, settings.target_language,
-            settings.translation_instructions, settings.translation_reasoning,
-            settings.output_language, settings.api_proxy_url, key,
-        )
+        settings = self.translation_settings or settings
+        signature = (*translation_configuration(settings),
+                     key if settings.translation_provider == "openai" else "")
         if signature != self.context_signature:
             self._reset_context(signature)
         if not settings.translation_enabled:
             return
-        recent = trim_context([*self.context, (segment_id, text)])
+        recent = next_context(self.context, (segment_id, text), settings.translation_provider)
         retained_ids = {item[0] for item in recent}
         if self.untranslated - retained_ids:
             # Coalescing must not silently skip a source that was never translated.
@@ -150,8 +162,12 @@ class CaptionPipeline(QObject):
         generation = self.generations[mode]
 
         def work(cancel, progress):
-            service = OpenAIService(key, proxy=settings.api_proxy_url or None)
+            google = settings.translation_provider == "google"
+            service = (GoogleService(proxy=settings.api_proxy_url or None) if google else
+                       OpenAIService(key, proxy=settings.api_proxy_url or None))
             try:
+                if google:
+                    return service.revise_translation(segments, settings.target_language)
                 return service.revise_captions(
                     segments, settings.translation_model, settings.target_language,
                     settings.translation_instructions, settings.translation_reasoning,

@@ -1,11 +1,13 @@
 """Mouse and tablet handwriting canvas with revisioned, vector-backed strokes."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from time import monotonic_ns
 
 from PySide6.QtCore import QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
+from ..ink import InkSnapshot
 from .canvas_snapshot import recognition_snapshot
 from .tablet_input import TabletInputMixin
 
@@ -16,6 +18,8 @@ Stroke = tuple[float, list[tuple[float, float]]]
 class DrawingEdit:
     added: list[Stroke]
     removed: list[Stroke]
+    added_times: list[list[int]] = field(default_factory=list)
+    removed_times: list[list[int]] = field(default_factory=list)
 
 
 class DrawingCanvas(TabletInputMixin, QWidget):
@@ -24,6 +28,7 @@ class DrawingCanvas(TabletInputMixin, QWidget):
     def __init__(self):
         super().__init__()
         self.strokes: list[Stroke] = []
+        self._stroke_times: list[list[int]] = []
         self._undo_stack: list[DrawingEdit] = []
         self._redo_stack: list[DrawingEdit] = []
         self.revision = 0
@@ -67,14 +72,17 @@ class DrawingCanvas(TabletInputMixin, QWidget):
         self.is_drawing = True
         self._last_position = QPointF(position)
         stroke = (self.pen_width, [self._point(position)])
-        self._record(DrawingEdit(added=[stroke], removed=[]))
+        times = [monotonic_ns()]
+        self._record(DrawingEdit(added=[stroke], removed=[], added_times=[times]))
         self.strokes.append(stroke)
+        self._stroke_times.append(times)
         self._changed()
 
     def extend_stroke(self, position):
         if self.is_drawing and self.strokes:
             self._last_position = QPointF(position)
             self.strokes[-1][1].append(self._point(position))
+            self._stroke_times[-1].append(monotonic_ns())
             self._changed()
 
     def end_stroke(self, position):
@@ -92,7 +100,9 @@ class DrawingCanvas(TabletInputMixin, QWidget):
         self._stroke_source = None
         if edit.added:
             del self.strokes[-len(edit.added):]
+            del self._stroke_times[-len(edit.added):]
         self.strokes.extend(edit.removed)
+        self._stroke_times.extend(edit.removed_times)
         self._redo_stack.append(edit)
         self._changed()
 
@@ -104,15 +114,20 @@ class DrawingCanvas(TabletInputMixin, QWidget):
         self._stroke_source = None
         if edit.removed:
             del self.strokes[-len(edit.removed):]
+            del self._stroke_times[-len(edit.removed):]
         self.strokes.extend(edit.added)
+        self._stroke_times.extend(edit.added_times)
         self._undo_stack.append(edit)
         self._changed()
 
     def clear(self):
         if self.is_blank:
             return
-        self._record(DrawingEdit(added=[], removed=self.strokes.copy()))
+        self._record(DrawingEdit(
+            added=[], removed=self.strokes.copy(), removed_times=self._stroke_times.copy()
+        ))
         self.strokes.clear()
+        self._stroke_times.clear()
         self.is_drawing = False
         self._stroke_source = None
         self._changed()
@@ -154,3 +169,14 @@ class DrawingCanvas(TabletInputMixin, QWidget):
 
     def snapshot(self) -> bytes:
         return recognition_snapshot(self)
+
+    def ink_snapshot(self) -> InkSnapshot:
+        """Export exactly the displayed strokes without rasterizing or losing timing."""
+        origin = self._stroke_times[0][0] if self._stroke_times else 0
+        width, height = self.width(), self.height()
+        strokes = tuple(
+            tuple((x * width, y * height, (timestamp - origin) / 1_000_000)
+                  for (x, y), timestamp in zip(points, times, strict=True))
+            for (_, points), times in zip(self.strokes, self._stroke_times, strict=True)
+        )
+        return InkSnapshot(width, height, strokes)

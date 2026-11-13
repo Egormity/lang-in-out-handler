@@ -62,6 +62,10 @@ class PreferencesPage(QWidget):
 
     def _connection(self, settings, api_key_present):
         scroll, layout = scrollable_body()
+        layout.addWidget(label(
+            "An OpenAI key is needed for speech features. Google Draw and Translate work without one.",
+            True,
+        ))
         form = preference_sections.group("OpenAI API key", layout)
         self.api_key = QLineEdit()
         self.api_key.setEchoMode(QLineEdit.EchoMode.Password)

@@ -5,6 +5,7 @@ from .common import label, selection_combo
 from .language_selectors import target_language_selector
 from .preference_controls import NumberInput
 from .preference_sections import group, instructions, language, model, number, reasoning, toggle
+from .provider_controls import ProviderControls
 
 
 def capture(page, settings, layout):
@@ -70,21 +71,29 @@ def captions(page, settings, layout):
 
 def translation(page, settings, layout, *, captions=False):
     form = group("Caption translation" if captions else "Translation", layout)
+    provider = ProviderControls(page, settings, form, "translation_provider")
     model_widget = model(page, settings, form, "translation_model")
     reasoning(page, settings, form, "translation_reasoning", model_widget)
     page.target_language = target_language_selector(settings.target_language, compact=False)
     page.fields.add(form, "Translate into", "target_language", page.target_language)
     instructions(page, settings, form, "translation_instructions", captions=captions)
+    provider.hide_for_google(
+        model_widget, page.translation_reasoning,
+        page.builtin_instructions["translation_instructions"],
+        page.instructions["translation_instructions"],
+    )
     if captions:
         form.addRow(label("Translation settings are shared with the Translate tool.", True))
 
 
 def handwriting(page, settings, layout):
     form = group("Handwriting recognition", layout)
+    provider = ProviderControls(page, settings, form, "drawing_provider")
     model_widget = model(page, settings, form, "drawing_model")
     reasoning(page, settings, form, "drawing_reasoning", model_widget)
     written_language = language(page, settings, form, "drawing_language")
-    written_language.setToolTip("Choose the language written on the canvas, or detect it automatically.")
+    written_language.setToolTip("Choose the language written on the canvas. OpenAI also supports automatic detection.")
+    provider.require_handwriting_language(written_language)
     toggle(page, form, "Automatic recognition", "drawing_auto_send")
     page.drawing_delay = NumberInput(
         0.2, 10, step=0.1, decimals=1, suffix=" seconds", name="Wait after drawing"
@@ -96,6 +105,11 @@ def handwriting(page, settings, layout):
     )
     page.drawing_auto_send.toggled.connect(page.drawing_delay.setEnabled)
     instructions(page, settings, form, "drawing_instructions")
+    provider.hide_for_google(
+        model_widget, page.drawing_reasoning,
+        page.builtin_instructions["drawing_instructions"],
+        page.instructions["drawing_instructions"],
+    )
     form = group("Canvas", layout)
     page.drawing_canvas_theme = selection_combo([], "")
     page.drawing_canvas_theme.addItem("Light", "light")

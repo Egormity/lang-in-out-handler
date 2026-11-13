@@ -31,6 +31,7 @@ class Controller(QObject):
         self.key = credentials.get()
         self.jobs = Jobs(self)
         self.pipeline = CaptionPipeline(self.jobs, self)
+        self.pipeline.update_settings(self.settings)
         self.workflows = Workflows(self)
         self.dictation = DictationDelivery(self)
         self.handwriting = Handwriting(self)
@@ -72,6 +73,8 @@ class Controller(QObject):
         window.history_refresh_requested.connect(self.refresh_history)
         window.history_delete_requested.connect(self.delete_history)
         overlay.stop_requested.connect(lambda: self.stop("output"))
+        overlay.cleared.connect(self.clear_captions)
+        window.pages["output"].cleared.connect(self.clear_captions)
         overlay.audio_requested.connect(self.workflows.speak)
         overlay.speech_stop_requested.connect(self.workflows.stop_speech)
         self.workflows.speech_active_changed.connect(window.set_speech_active)
@@ -106,6 +109,7 @@ class Controller(QObject):
             self.fail("Chunk length must be between 2 and 30 seconds.")
             return
         self.settings = deepcopy(settings)
+        self.pipeline.update_settings(self.settings)
         self.store.save_settings(self.settings)
         self.overlay.update_settings(self.settings)
         self.window.update_settings(self.settings)
@@ -136,6 +140,7 @@ class Controller(QObject):
         # Connection buttons apply the proxy being edited without resetting other
         # unsaved model/language controls in the preferences page.
         self.settings.api_proxy_url = self.window.connection_proxy_url()
+        self.pipeline.update_settings(self.settings)
         self.store.save_settings(self.settings)
         # Commit this connection field without applying other pending preferences.
         self.window.settings = replace(
@@ -284,6 +289,13 @@ class Controller(QObject):
     def show_overlay(self):
         self.overlay.show()
         self.overlay.raise_()
+
+    def clear_captions(self):
+        self.pipeline.clear_translation_context()
+        self.workflows.files.context_epoch += 1
+        page = self.window.pages["output"]
+        for pane in (page.results, page.translations, self.overlay.transcript, self.overlay.translation):
+            pane.clear()
 
     def action(self, action):
         if action in {"input", "output", "translate"}:

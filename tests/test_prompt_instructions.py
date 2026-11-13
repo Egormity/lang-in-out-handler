@@ -31,7 +31,8 @@ def test_all_custom_defaults_are_empty_and_old_stock_text_is_not_a_user_override
 
 @pytest.mark.parametrize("mode", ["input", "output", "translate", "drawing", "global"])
 def test_builtin_instructions_are_visible_readonly_and_excluded_from_saved_fields(qtbot, mode):
-    panel = PreferencesPage(Settings()) if mode == "global" else ToolSettings(mode, Settings())
+    settings = Settings(drawing_provider="openai", translation_provider="openai")
+    panel = PreferencesPage(settings) if mode == "global" else ToolSettings(mode, settings)
     qtbot.addWidget(panel)
     for key, builtin in panel.builtin_instructions.items():
         expected = builtin_instructions(

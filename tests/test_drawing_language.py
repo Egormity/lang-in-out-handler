@@ -13,7 +13,7 @@ from lang_handler.ui.main_window import MainWindow
 
 
 def test_drawing_header_language_preserves_ink_and_cancels_old_recognition(qtbot):
-    page = DrawingPage(Settings(drawing_auto_send=False))
+    page = DrawingPage(Settings(drawing_auto_send=False, drawing_language="en"))
     qtbot.addWidget(page)
     page.options_changed.connect(lambda patch: page.update_settings(replace(page.settings, **patch)))
     page.canvas.begin_stroke(QPointF(40, 30))
@@ -22,6 +22,7 @@ def test_drawing_header_language_preserves_ink_and_cancels_old_recognition(qtbot
     canceled = QSignalSpy(page.cancel_requested)
     changes = QSignalSpy(page.options_changed)
     page.language.setCurrentText("Japanese")
+    assert changes.count() == 1
     assert changes.at(0) == [{"drawing_language": "ja"}]
     assert page.settings.drawing_language == "ja"
     assert page.canvas.strokes == strokes

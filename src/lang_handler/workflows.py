@@ -12,6 +12,7 @@ from shiboken6 import isValid
 from .api import OpenAIService
 from .desktop import play_audio
 from .file_import import FileImports
+from .google_api import GoogleService
 from .ui.inline_audio import audio_is_active, stop_all_audio
 
 
@@ -36,10 +37,12 @@ class Workflows(QObject):
         self.files.start(mode, path, chunked)
 
     def translate(self, text):
-        key = self.c.require_key()
-        if not key or not text.strip():
-            if key:
-                self.c.fail("Enter or copy some text to translate.")
+        if not text.strip():
+            self.c.fail("Enter or copy some text to translate.")
+            return
+        google = self.c.settings.translation_provider == "google"
+        key = "" if google else self.c.require_key()
+        if not google and not key:
             return
         if self.translation_job:
             self.c.status("Translation is already in progress.")
@@ -50,8 +53,11 @@ class Workflows(QObject):
         page.set_busy(True)
 
         def work(cancel, progress):
-            service = OpenAIService(key, proxy=settings.api_proxy_url or None)
+            service = (GoogleService(proxy=settings.api_proxy_url or None) if google else
+                       OpenAIService(key, proxy=settings.api_proxy_url or None))
             try:
+                if google:
+                    return service.translate(text, settings.target_language)
                 return service.translate(
                     text,
                     settings.translation_model,
@@ -63,8 +69,10 @@ class Workflows(QObject):
                 service.close()
 
         def success(translated):
-            displayed = self.c.window.set_translation(translated, text, settings.target_language)
-            self.c.remember("translate", text, translated, settings.translation_model)
+            displayed = (self.c.settings.translation_provider == settings.translation_provider
+                         and self.c.window.set_translation(translated, text, settings.target_language))
+            self.c.remember("translate", text, translated, "google-translate" if google
+                            else settings.translation_model)
             self.c.status("Translation ready." if displayed else
                           "Translation saved in History; the original text or target language changed.")
 

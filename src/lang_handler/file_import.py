@@ -8,7 +8,8 @@ from PySide6.QtCore import QObject
 
 from .api import OpenAIService
 from .audio import audio_file_chunks
-from .caption_context import trim_context
+from .google_api import GoogleService
+from .translation_context import next_context, translation_configuration
 
 
 class FileImports(QObject):
@@ -17,6 +18,7 @@ class FileImports(QObject):
         self.c = controller
         self.imports = {}
         self.generations = {}
+        self.context_epoch = 0
 
     def start(self, mode, path, chunked):
         key = self.c.require_key()
@@ -41,8 +43,10 @@ class FileImports(QObject):
 
         def work(cancel, progress):
             service = OpenAIService(key, proxy=settings.api_proxy_url or None)
+            translator = None
             completed = 0
             context = []
+            context_epoch = self.context_epoch
             try:
                 length = getattr(settings, f"{mode}_chunk_seconds") if chunked else None
                 for audio in audio_file_chunks(Path(path), length):
@@ -59,17 +63,28 @@ class FileImports(QObject):
                     segment_id = self.c.pipeline.allocate_segment_id()
                     progress(("source", segment_id, text))
                     completed += 1
-                    if mode == "output" and settings.translation_enabled:
-                        context = trim_context([*context, (segment_id, text)])
-                        revisions = service.revise_captions(
-                            context, settings.translation_model, settings.target_language,
-                            settings.translation_instructions, settings.translation_reasoning,
-                        )
+                    if (mode == "output" and settings.translation_enabled
+                            and translation_configuration(settings) == translation_configuration(self.c.settings)):
+                        if context_epoch != self.context_epoch:
+                            context = []
+                            context_epoch = self.context_epoch
+                        context = next_context(context, (segment_id, text), settings.translation_provider)
+                        if settings.translation_provider == "google":
+                            if translator is None:
+                                translator = GoogleService(proxy=settings.api_proxy_url or None)
+                            revisions = translator.revise_translation(context, settings.target_language)
+                        else:
+                            revisions = service.revise_captions(
+                                context, settings.translation_model, settings.target_language,
+                                settings.translation_instructions, settings.translation_reasoning,
+                            )
                         if not cancel.is_set():
                             progress(("revisions", revisions))
                 return completed
             finally:
                 service.close()
+                if translator is not None:
+                    translator.close()
 
         def current():
             return mode in self.imports and self.generations.get(mode) == generation
@@ -83,7 +98,7 @@ class FileImports(QObject):
                 self.c.window.append_result(mode, text, segment_id=segment_id)
                 if mode == "output":
                     self.c.overlay.append_caption(text, segment_id=segment_id)
-            else:
+            elif translation_configuration(settings) == translation_configuration(self.c.settings):
                 self.c._revisions(event[1])
 
         def done():

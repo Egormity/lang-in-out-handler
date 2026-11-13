@@ -35,7 +35,7 @@ class CanvasController(QObject):
     def __init__(self, qapp):
         super().__init__()
         self.window = CanvasWindow(qapp.thread())
-        self.settings = Settings()
+        self.settings = Settings(drawing_provider="openai")
         self.jobs = Jobs(self)
         self.history = []
         self.statuses = []

@@ -38,7 +38,7 @@ class MainWindow(QMainWindow):
     audio_requested = Signal(str, object)
     speech_stop_requested = Signal()
     speech_replay_requested = Signal(str)
-    drawing_requested = Signal(bytes, int)
+    drawing_requested = Signal(object, int)
     drawing_cancel_requested = Signal()
     overlay_requested = Signal()
     settings_saved = Signal(object)

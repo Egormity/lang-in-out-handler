@@ -16,6 +16,7 @@ class CaptionOverlay(QWidget):
     speech_requested = Signal(str)
     audio_requested = Signal(str, object)
     speech_stop_requested = Signal()
+    cleared = Signal()
 
     def __init__(self, settings):
         super().__init__()
@@ -112,6 +113,7 @@ class CaptionOverlay(QWidget):
     def clear(self):
         self.transcript.clear()
         self.translation.clear()
+        self.cleared.emit()
 
     def closeEvent(self, event):
         self.pin_control.stop()

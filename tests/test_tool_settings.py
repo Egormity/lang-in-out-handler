@@ -42,10 +42,10 @@ def test_tool_save_emits_only_owned_fields_and_all_dropdowns_are_strict(qtbot, m
 
 
 def test_handwriting_language_and_reasoning_are_saved_and_reset_independently(qtbot):
-    panel = ToolSettings("drawing", Settings())
+    panel = ToolSettings("drawing", Settings(drawing_provider="openai"))
     qtbot.addWidget(panel)
     assert panel.drawing_reasoning.currentText() == "Low"
-    assert panel.drawing_language.currentData() == ""
+    assert panel.drawing_language.currentData() == "ja"
     panel.drawing_language.setCurrentText("Japanese")
     panel.drawing_reasoning.setCurrentText("High")
     patch = panel.collect()
@@ -57,7 +57,7 @@ def test_handwriting_language_and_reasoning_are_saved_and_reset_independently(qt
 
 
 def test_reasoning_control_tracks_model_capability(qtbot):
-    panel = ToolSettings("translate", Settings())
+    panel = ToolSettings("translate", Settings(translation_provider="openai"))
     qtbot.addWidget(panel)
     panel.set_models(["gpt-4o", "gpt-6-luna"])
     panel.models["translation_model"].setCurrentText("gpt-4o")
@@ -103,7 +103,7 @@ def test_reset_section_restores_only_current_tool_defaults_and_waits_for_save(qt
     qtbot.addWidget(panel)
     saved = QSignalSpy(panel.saved)
     panel.reset_section()
-    assert panel.collect()["drawing_language"] == ""
+    assert panel.collect()["drawing_language"] == "ja"
     assert panel.collect()["drawing_reasoning"] == "low"
     assert panel.collect()["drawing_pen_width"] == 4
     assert panel.settings == baseline

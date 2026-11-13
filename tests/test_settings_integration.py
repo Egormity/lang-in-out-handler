@@ -7,7 +7,7 @@ from lang_handler.ui.main_window import MainWindow
 
 
 def test_saving_one_tool_preserves_other_tool_and_global_drafts(qtbot):
-    window = MainWindow(Settings(), True)
+    window = MainWindow(Settings(drawing_language="en", translation_provider="openai"), True)
     qtbot.addWidget(window)
     drawing = window.pages["drawing"].tool_settings
     translation = window.pages["translate"].tool_settings
@@ -17,7 +17,7 @@ def test_saving_one_tool_preserves_other_tool_and_global_drafts(qtbot):
     translation.translation_reasoning.setCurrentText("High")
     translation.save_button.click()
     assert window.settings.translation_reasoning == "high"
-    assert window.settings.drawing_language == ""
+    assert window.settings.drawing_language == "en"
     assert window.settings.tts_instructions == Settings().tts_instructions
     assert drawing.collect()["drawing_language"] == "ja"
     assert global_settings.collect()["tts_instructions"] == "Unsaved voice instruction"
@@ -43,14 +43,14 @@ def test_shared_translation_settings_refresh_both_tools_without_losing_drafts(qt
 
 def test_global_reset_all_stages_all_sections_then_global_save_applies(qtbot):
     window = MainWindow(Settings(
-        drawing_language="ja", drawing_reasoning="high", input_delivery="copy",
+        drawing_language="en", drawing_reasoning="high", input_delivery="copy",
         target_language="Russian", output_chunk_seconds=9, voice="cedar",
     ), True)
     qtbot.addWidget(window)
     preferences = window.pages["preferences"]
     preferences.reset_all_button.click()
-    assert window.settings.drawing_language == "ja"
-    assert window.pages["drawing"].tool_settings.collect()["drawing_language"] == ""
+    assert window.settings.drawing_language == "en"
+    assert window.pages["drawing"].tool_settings.collect()["drawing_language"] == "ja"
     assert window.pages["input"].tool_settings.collect()["input_delivery"] == "copy_and_paste"
     preferences.save_preferences.click()
     assert window.settings == Settings()

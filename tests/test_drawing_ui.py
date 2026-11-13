@@ -29,7 +29,7 @@ def stroke(qtbot, canvas, offset=0):
 
 
 def test_canvas_mouse_stroke_exports_png_and_manual_works_with_auto_off(qtbot):
-    window, page = drawing_window(qtbot, drawing_auto_send=False)
+    window, page = drawing_window(qtbot, drawing_provider="openai", drawing_auto_send=False)
     requests = QSignalSpy(window.drawing_requested)
     assert not page.send_button.isEnabled()
     stroke(qtbot, page.canvas)

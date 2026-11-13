@@ -8,7 +8,7 @@ from .errors import ServiceError
 from .system_proxy import OPENAI_PROXY_TARGET, desktop_proxy
 
 
-def proxy_url(explicit: str | None = None) -> str | None:
+def proxy_url(explicit: str | None = None, *, target: str = OPENAI_PROXY_TARGET) -> str | None:
     value = explicit.strip() if explicit else ""
     if not value:
         value = next((os.environ[name].strip() for name in (
@@ -16,10 +16,10 @@ def proxy_url(explicit: str | None = None) -> str | None:
         ) if os.environ.get(name, "").strip()), "")
         if value:
             bypass = os.environ.get("no_proxy", os.environ.get("NO_PROXY", ""))
-            if proxy_bypass_environment(urlsplit(OPENAI_PROXY_TARGET).netloc, {"no": bypass}):
+            if proxy_bypass_environment(urlsplit(target).netloc, {"no": bypass}):
                 return None
         else:
-            value = desktop_proxy()
+            value = desktop_proxy(target)
     if value:
         value = value.strip()
     if value and value.lower().startswith("socks://"):

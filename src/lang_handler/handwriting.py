@@ -5,6 +5,7 @@ from copy import deepcopy
 from PySide6.QtCore import QObject
 
 from .api import OpenAIService
+from .google_api import GoogleService
 
 
 class Handwriting(QObject):
@@ -18,21 +19,23 @@ class Handwriting(QObject):
 
     @staticmethod
     def _signature(request):
-        png, revision, settings, key = request
+        snapshot, revision, settings, key = request
         return (
-            png, revision, key, settings.drawing_model, settings.drawing_instructions,
+            snapshot, revision, key, settings.drawing_provider,
+            settings.drawing_model, settings.drawing_instructions,
             settings.drawing_reasoning, settings.drawing_language, settings.api_proxy_url,
         )
 
-    def recognize(self, png, revision):
-        if not png or revision != self.c.window.drawing_revision():
+    def recognize(self, snapshot, revision):
+        if not snapshot or revision != self.c.window.drawing_revision():
             return
-        key = self.c.require_key()
-        if not key:
+        google = self.c.settings.drawing_provider == "google"
+        key = "" if google else self.c.require_key()
+        if not google and not key:
             return
         # At most one active request and one pending snapshot. New changes replace
         # the pending snapshot rather than spending API credit on obsolete canvases.
-        request = (png, revision, deepcopy(self.c.settings), key)
+        request = (snapshot, revision, deepcopy(self.c.settings), key)
         if self.job:
             signature = self._signature(request)
             if not self.job.cancelled.is_set() and signature == self._active_signature:
@@ -45,16 +48,20 @@ class Handwriting(QObject):
         self._start(request)
 
     def _start(self, request):
-        png, revision, settings, key = request
+        snapshot, revision, settings, key = request
+        google = settings.drawing_provider == "google"
         epoch = self.epoch
         self._active_signature = self._signature(request)
         self.c.window.set_drawing_busy(True)
 
         def work(cancel, progress):
-            service = OpenAIService(key, proxy=settings.api_proxy_url or None)
+            service = (GoogleService(proxy=settings.api_proxy_url or None) if google else
+                       OpenAIService(key, proxy=settings.api_proxy_url or None))
             try:
+                if google:
+                    return service.recognize_handwriting(snapshot, settings.drawing_language)
                 return service.recognize_handwriting(
-                    png,
+                    snapshot,
                     settings.drawing_model,
                     settings.drawing_instructions,
                     reasoning=settings.drawing_reasoning,
@@ -69,7 +76,8 @@ class Handwriting(QObject):
             self.c.window.set_drawing_result(items, revision)
             if items:
                 for text in items:
-                    self.c.remember("drawing", text, "", settings.drawing_model)
+                    self.c.remember("drawing", text, "", "google-handwriting" if google
+                                    else settings.drawing_model)
 
         def failed(message):
             if epoch == self.epoch and revision == self.c.window.drawing_revision():
