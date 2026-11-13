@@ -57,17 +57,14 @@ _CAPTION_TRANSLATION = (
 )
 
 _HANDWRITING = (
-    "Act as a handwriting candidate picker. Return an items array of distinct plausible "
-    "transcriptions, ranked from most to least likely. Aim for three candidates, with at "
-    "most six. Explore visually similar characters, uncertain stroke joins, loops, and "
-    "character boundaries even when one reading is clearly your favorite. For short "
-    "writing or a single character, include lower-confidence readings that could reasonably "
-    "match the drawn strokes; do not stop at your top guess. Each item must be a complete "
-    "reading, preserving the original language, script, and line breaks. Alternatives "
-    "must differ in interpretation of the visible strokes, not translation, romanization, "
-    "paraphrasing, or spelling corrections unsupported by the image. Return fewer than "
-    "three only when no other visually plausible readings exist; never pad the list. "
-    "Do not translate or explain. If there is no readable writing, return an empty items array."
+    "Read the handwriting as complete words or phrases. Use nearby characters and language "
+    "context to resolve imperfect strokes; consider a plausible whole word before isolated "
+    "character guesses. Do not split parts of one handwritten character into extra characters. "
+    "Preserve the visible script, diacritics, vowel-length marks, and line breaks. Do not "
+    "translate, romanize, paraphrase, or complete missing text. Return an items array with the "
+    "best complete reading first. Add distinct alternative readings only for genuine visual "
+    "ambiguity, with at most six items. Never invent or pad guesses; one confident reading "
+    "is enough. Return an empty items array for blank or unreadable writing."
 )
 
 _SPEECH = (

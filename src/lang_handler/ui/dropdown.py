@@ -60,14 +60,21 @@ class CompactComboBox(QComboBox):
                 self.setItemData(index, self.itemText(index), Qt.ItemDataRole.ToolTipRole)
         screen = self.screen().availableGeometry()
         width = min(self.MAX_POPUP_WIDTH, max(200, self.width()), screen.width())
-        row_height = max(32, self.fontMetrics().height() + 12)
-        height = min(self.count(), self.MAX_ROWS) * row_height + 2
-        height = min(height, screen.height() - 16)
+        view.ensurePolished()
+        row_height = max(1, view.sizeHintForRow(0))
+        rows_height = min(self.count(), self.MAX_ROWS) * row_height
+        margins = view.contentsMargins()
+        height = min(rows_height + margins.top() + margins.bottom(), screen.height() - 16)
         popup = view.window()
         # Set both constraints before Qt opens its internal popup container, so
         # the full-width form field cannot flash as a screen-sized menu.
         popup.setFixedSize(QSize(width, height))
         super().showPopup()
+        # Styles add padding and borders around the list's viewport. Without
+        # these pixels a six-item menu fits only five whole rows, scrolls its
+        # first item away, and leaves a blank row-sized gap at the bottom.
+        chrome = popup.height() - view.viewport().height()
+        height = min(rows_height + chrome, screen.height() - 16)
         popup.setFixedSize(QSize(width, height))
         anchor = self.mapToGlobal(QPoint(0, self.height()))
         x = max(screen.left(), min(anchor.x(), screen.right() - width + 1))

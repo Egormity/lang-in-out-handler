@@ -44,7 +44,7 @@ def test_tool_save_emits_only_owned_fields_and_all_dropdowns_are_strict(qtbot, m
 def test_handwriting_language_and_reasoning_are_saved_and_reset_independently(qtbot):
     panel = ToolSettings("drawing", Settings())
     qtbot.addWidget(panel)
-    assert panel.drawing_reasoning.currentText() == "Medium"
+    assert panel.drawing_reasoning.currentText() == "Low"
     assert panel.drawing_language.currentData() == ""
     panel.drawing_language.setCurrentText("Japanese")
     panel.drawing_reasoning.setCurrentText("High")
@@ -52,7 +52,7 @@ def test_handwriting_language_and_reasoning_are_saved_and_reset_independently(qt
     assert patch["drawing_language"] == "ja"
     assert patch["drawing_reasoning"] == "high"
     panel.reset_buttons["drawing_reasoning"].click()
-    assert panel.collect()["drawing_reasoning"] == "medium"
+    assert panel.collect()["drawing_reasoning"] == "low"
     assert panel.collect()["drawing_language"] == "ja"
 
 
@@ -104,7 +104,7 @@ def test_reset_section_restores_only_current_tool_defaults_and_waits_for_save(qt
     saved = QSignalSpy(panel.saved)
     panel.reset_section()
     assert panel.collect()["drawing_language"] == ""
-    assert panel.collect()["drawing_reasoning"] == "medium"
+    assert panel.collect()["drawing_reasoning"] == "low"
     assert panel.collect()["drawing_pen_width"] == 4
     assert panel.settings == baseline
     assert saved.count() == 0
@@ -125,7 +125,8 @@ def test_saved_legacy_capture_settings_map_to_new_fields():
     legacy = Settings.from_dict({"auto_paste": False, "chunk_seconds": 7})
     assert legacy.input_delivery == "copy"
     assert legacy.input_chunk_seconds == legacy.output_chunk_seconds == 7
-    assert legacy.translation_reasoning == legacy.drawing_reasoning == "medium"
+    assert legacy.translation_reasoning == "medium"
+    assert legacy.drawing_reasoning == "low"
     assert "auto_paste" not in legacy.to_dict()
     assert "chunk_seconds" not in legacy.to_dict()
     explicit = Settings.from_dict({"auto_paste": True, "input_delivery": "paste", "chunk_seconds": 7, "input_chunk_seconds": 3})

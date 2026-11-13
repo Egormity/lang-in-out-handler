@@ -44,7 +44,7 @@ Defaults: `gpt-transcribe` for speech recognition, `gpt-6-luna` for text transla
 
 Translation returns translated text, pronunciation guides for the original and translation, and an optional correction suggestion. Japanese uses romaji; other languages use appropriate romanization or IPA. Guides remain selectable for copying with the keyboard; the extra pronunciation copy buttons are omitted. The same guides accompany continuous captions and remain available in History. Select text before clicking Speak to read only that passage; otherwise Speak reads the pane. Speech requests are limited to 4,096 characters. Once audio is generated, its Speak button becomes an inline player with play/pause, seeking, and 0.5–2× playback speed. Replay and speed changes use the existing file without another API request. Editing the source text clears its outdated player. You can save the last generated WAV under Preferences → Shared speech.
 
-**Reasoning** offers Low, Medium, and High on Translate and Handwriting, with **Medium** as the default. The control is disabled for models without reasoning support. Caption translation shares its model, target language, instructions, and reasoning with Translate; edit these from either page.
+**Reasoning** offers Low, Medium, and High on Translate and Handwriting. Translation defaults to **Medium**; handwriting defaults to **Low**. The control is disabled for models without reasoning support. Caption translation shares its model, target language, instructions, and reasoning with Translate; edit these from either page.
 
 ### Handwriting
 
@@ -54,9 +54,9 @@ Choose **Float** to keep handwriting above other applications. Configure **Keep 
 
 Pen handling supports Qt tablet events and driver-emulated mouse events. Pressure contact can start a stroke when a driver omits the initial tip-press event; hovering does not draw. Tablet behavior depends on the installed tablet driver and desktop session.
 
-In **Draw → settings gear**, choose the model, reasoning level, and writing language (or Auto detect), enable/disable automatic recognition, and set the pause from 0.2 to 10 seconds (1.2 seconds by default). Only the latest canvas snapshot is queued while recognition is busy, blank canvases are never sent, and results for an older drawing cannot overwrite newer content. Each automatic recognition is a billable image request.
+In **Draw → settings gear**, choose the model, reasoning level, and writing language (or Auto detect), enable/disable automatic recognition, and set the pause from 0.2 to 10 seconds (1.2 seconds by default). Progress appears on the Recognize button. Repeated sends of the same active snapshot share one request. Only the latest canvas snapshot is queued while recognition is busy, blank canvases are never sent, and results for an older drawing cannot overwrite newer content. Each automatic recognition is a billable image request.
 
-Handwriting defaults to `gpt-6-luna`. The model returns a strict JSON object containing an array of candidate strings; the app validates, deduplicates, and displays that array as individual readings. A blank or unreadable image returns no candidates. Recognition accuracy depends on handwriting and model choice. Canvas images are not retained in history; recognized candidates are.
+Handwriting defaults to `gpt-6.1-sol` with Low reasoning. Recognition images are cropped to the ink with a white margin and retain their aspect ratio, with a maximum dimension of 1,280 pixels. The prompt favors complete words and adds alternatives only when the strokes are genuinely ambiguous; it does not force three guesses. The model returns a strict JSON object containing an array of candidate strings; the app validates, deduplicates, and displays that array as individual readings. A blank or unreadable image returns no candidates. Recognition accuracy depends on handwriting and model choice. Canvas images are not retained in history; recognized candidates are.
 
 ### Keyboard controls
 

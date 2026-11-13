@@ -2,10 +2,11 @@
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QPointF, Qt, Signal
-from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPolygonF
+from PySide6.QtCore import QPointF, Qt, Signal
+from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
+from .canvas_snapshot import recognition_snapshot
 from .tablet_input import TabletInputMixin
 
 Stroke = tuple[float, list[tuple[float, float]]]
@@ -152,14 +153,4 @@ class DrawingCanvas(TabletInputMixin, QWidget):
         painter.end()
 
     def snapshot(self) -> bytes:
-        if self.is_blank:
-            return b""
-        image = QImage(self.size(), QImage.Format.Format_RGB32)
-        painter = QPainter(image)
-        self._paint_strokes(painter, image.width(), image.height())
-        painter.end()
-        data = QByteArray()
-        buffer = QBuffer(data)
-        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-        image.save(buffer, "PNG")
-        return bytes(data)
+        return recognition_snapshot(self)

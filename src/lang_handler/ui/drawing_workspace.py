@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
-from .common import button, label
+from .common import button
 from .drawing_candidates import DrawingCandidates
 from .drawing_canvas import DrawingCanvas
 from .icons import icon_button
@@ -44,7 +44,3 @@ class DrawingWorkspace(QWidget):
         layout.addWidget(self.canvas, 3)
         self.result = DrawingCandidates()
         layout.addWidget(self.result, 1)
-        footer = QHBoxLayout()
-        self.status = label("", True)
-        footer.addWidget(self.status, 1)
-        layout.addLayout(footer)

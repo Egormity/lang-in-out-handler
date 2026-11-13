@@ -5,6 +5,7 @@ from PySide6.QtTest import QSignalSpy
 
 from lang_handler.settings import Settings
 from lang_handler.ui.dropdown import CompactComboBox
+from lang_handler.ui.inline_audio import InlineAudio
 from lang_handler.ui.main_window import MainWindow
 from lang_handler.ui.theme import STYLE
 
@@ -25,9 +26,30 @@ def test_menu_has_at_most_eight_rows_and_does_not_inherit_field_width(qtbot):
     qtbot.wait(20)
     popup = combo.view().window()
     assert popup.width() <= 360
-    assert popup.height() <= 8 * max(32, combo.fontMetrics().height() + 12) + 2
+    assert combo.view().viewport().height() <= 8 * combo.view().sizeHintForRow(0)
     assert combo.view().verticalScrollBar().maximum() > 0
     assert combo.view().horizontalScrollBar().maximum() == 0
+    combo.hidePopup()
+
+
+def test_speed_menu_fits_every_option_without_a_blank_tail(qtbot):
+    audio = InlineAudio()
+    qtbot.addWidget(audio)
+    audio.setStyleSheet(STYLE)
+    audio.controls.show()
+    audio.speak.hide()
+    audio.setFixedWidth(250)
+    audio.show()
+    combo = audio.speed
+    combo.setCurrentIndex(4)
+    combo.showPopup()
+    view = combo.view()
+    qtbot.waitUntil(lambda: view.verticalScrollBar().maximum() == 0)
+    first = view.visualRect(combo.model().index(0, 0))
+    last = view.visualRect(combo.model().index(combo.count() - 1, 0))
+    assert first.top() == 0
+    assert 0 <= view.viewport().height() - last.bottom() - 1 <= 2
+    assert view.window().width() == 100
     combo.hidePopup()
 
 

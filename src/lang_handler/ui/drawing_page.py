@@ -69,7 +69,6 @@ class DrawingPage(QWidget):
             "undo_button",
             "redo_button",
             "clear_button",
-            "status",
         ):
             setattr(self, name, getattr(self.workspace, name))
         layout.addWidget(self.workspace, 1)
@@ -140,17 +139,11 @@ class DrawingPage(QWidget):
         self.undo_button.setEnabled(self.canvas.can_undo)
         self.redo_button.setEnabled(self.canvas.can_redo)
         self.clear_button.setEnabled(not blank)
-        self.send_button.setEnabled(not blank and not self.canvas.is_drawing)
+        self._update_recognize_button()
         self.result.clear()
         if blank:
-            self.status.setText("")
             self.cancel_requested.emit()
-        elif self.canvas.is_drawing:
-            self.status.setText("Drawing…")
-        else:
-            self.status.setText(
-                "Waiting to recognize…" if self.settings.drawing_auto_send else "Ready to send."
-            )
+        elif not self.canvas.is_drawing:
             self._schedule()
 
     def _schedule(self):
@@ -170,16 +163,21 @@ class DrawingPage(QWidget):
     def set_result(self, items, revision):
         if revision == self.canvas.revision:
             self.result.set_items(items)
-            self.status.setText(
-                "" if items else "No readable handwriting found."
-            )
 
     def set_busy(self, busy):
         self.busy = busy
-        if busy:
-            self.status.setText("Recognizing handwriting…")
-        elif self.status.text() == "Recognizing handwriting…" and not self.canvas.is_blank:
-            self.status.setText("Ready to send.")
+        self._update_recognize_button()
+
+    def _update_recognize_button(self):
+        has_ink = not self.canvas.is_blank
+        recognizing = self.busy and has_ink
+        self.send_button.setText("Recognizing…" if recognizing else "Recognize")
+        self.send_button.setAccessibleName(
+            "Recognizing handwriting" if recognizing else "Send canvas to transcribe"
+        )
+        # Keep manual submission available for the newest drawing while an older
+        # revision is running; the handwriting worker coalesces that request.
+        self.send_button.setEnabled(has_ink and not self.canvas.is_drawing)
 
     def set_speech_active(self, active):
         self.result.set_speech_active(active)

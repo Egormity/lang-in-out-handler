@@ -80,6 +80,8 @@ class DrawingCandidates(QWidget):
     def set_items(self, items: list[str]):
         self.clear()
         self.items = list(items)
+        if not self.items:
+            self.empty.setText("No readable handwriting found.")
         self.empty.setVisible(not self.items)
         for index, text in enumerate(self.items, 1):
             row = CandidateRow(text, index)
@@ -96,6 +98,7 @@ class DrawingCandidates(QWidget):
             row.hide()
             row.deleteLater()
         self.rows.clear()
+        self.empty.setText("Recognized readings will appear here.")
         self.empty.show()
 
     def set_speech_active(self, active):
