@@ -1,18 +1,16 @@
 """Audio source selection using detected desktop devices."""
 
-from PySide6.QtWidgets import QComboBox
+from .dropdown import CompactComboBox
 
 
-class AudioSourceCombo(QComboBox):
+class AudioSourceCombo(CompactComboBox):
     """Show friendly device labels while persisting the underlying source name."""
 
     def __init__(self, monitor: bool, value: str = ""):
         super().__init__()
         self.monitor = monitor
         self.setEditable(False)
-        self.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.setMinimumContentsLength(16)
-        self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.setToolTip("Choose a detected audio device.")
         self.set_sources([])
         self.set_value(value)

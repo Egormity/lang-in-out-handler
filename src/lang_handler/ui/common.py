@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .dropdown import CompactComboBox
+
 
 def title_block(title: str, description: str) -> QWidget:
     widget = QWidget()
@@ -43,7 +45,7 @@ def button(text: str, primary: bool = False) -> QPushButton:
 
 
 def selection_combo(items: list[str], value: str) -> QComboBox:
-    widget = QComboBox()
+    widget = CompactComboBox()
     widget.setEditable(False)
     widget.addItems(list(dict.fromkeys(item for item in [*items, value] if item)))
     widget.setCurrentText(value)
@@ -51,7 +53,7 @@ def selection_combo(items: list[str], value: str) -> QComboBox:
 
 
 def language_combo(value: str) -> QComboBox:
-    widget = QComboBox()
+    widget = CompactComboBox()
     widget.setEditable(False)
     for display, code in [
         ("Auto detect", ""),
