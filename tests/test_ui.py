@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QSignalSpy
-from PySide6.QtWidgets import QLineEdit
+from PySide6.QtWidgets import QLineEdit, QProgressBar
 
 from lang_handler.settings import Settings
 from lang_handler.ui.main_window import MainWindow
@@ -20,9 +20,9 @@ def test_capture_uses_saved_preference_instructions(qtbot):
     )
     window.capture_requested.connect(lambda mode, chunks: order.append((mode, chunks)))
     page = window.pages["output"]
-    preferences = window.pages["preferences"]
+    preferences = page.tool_settings
     preferences.instructions["output_instructions"].setPlainText("Names: Sakura and Aoi")
-    preferences.save_preferences.click()
+    preferences.save_button.click()
     order.clear()
     page.start_button.click()
     assert order == [("settings", "Names: Sakura and Aoi"), ("output", True)]
@@ -67,18 +67,20 @@ def test_preferences_key_mask_and_model_refresh(qtbot):
     assert preferences.api_key.echoMode() == QLineEdit.EchoMode.Password
     window.update_settings(Settings(input_model="custom-transcribe-model"))
     window.set_models(["gpt-transcribe", "gpt-live-transcribe", "gpt-6-luna", "gpt-4o-mini-tts"])
-    assert preferences.models["input_model"].currentText() == "custom-transcribe-model"
-    assert preferences.models["input_model"].findText("gpt-live-transcribe") < 0
-    assert preferences.models["translation_model"].findText("gpt-6-luna") >= 0
+    input_panel = window.pages["input"].tool_settings
+    translation_panel = window.pages["translate"].tool_settings
+    assert input_panel.models["input_model"].currentText() == "custom-transcribe-model"
+    assert input_panel.models["input_model"].findText("gpt-live-transcribe") < 0
+    assert translation_panel.models["translation_model"].findText("gpt-6-luna") >= 0
 
 
 def test_preferences_save_applies_instructions_to_all_modes(qtbot):
     window = MainWindow(Settings(), True)
     qtbot.addWidget(window)
-    preferences = window.pages["preferences"]
+    preferences = window.pages["translate"].tool_settings
     preferences.instructions["translation_instructions"].setPlainText("Use polite Russian.")
     preferences.target_language.setCurrentText("Russian")
-    preferences.save_preferences.click()
+    preferences.save_button.click()
     assert window.settings.target_language == "Russian"
     assert window.settings.translation_instructions == "Use polite Russian."
 
@@ -105,20 +107,23 @@ def test_history_selection_and_navigation(qtbot):
     assert window.stack.currentWidget() is page
 
 
-def test_audio_level_exposes_silence_and_signal(qtbot):
+def test_audio_activity_is_compact_and_only_visible_while_recording(qtbot):
     window = MainWindow(Settings(), True)
     qtbot.addWidget(window)
+    page = window.pages["input"]
+    assert page.level.isHidden()
+    assert not page.findChildren(QProgressBar)
     window.set_level("input", 0.1)
-    assert window.pages["input"].level.value() == 40
-    assert "-20 dB" in window.pages["input"].level.text()
-    window.set_level("output", 0)
-    assert window.pages["output"].level.text() == "No audio detected"
+    assert page.level.isHidden()
+    window.set_recording("input", True)
+    assert not page.level.isHidden()
+    assert page.level.text() == "Listening…"
+    window.set_level("input", 0.1)
+    assert page.level.text() == "● Audio detected"
     window.set_level("input", float("nan"))
-    assert window.pages["input"].level.value() == 0
-    window.set_level("input", 2)
-    assert window.pages["input"].level.value() == 60
+    assert page.level.text() == "Listening…"
     window.set_recording("input", False)
-    assert window.pages["input"].level.value() == 0
+    assert page.level.isHidden()
 
 
 def test_device_names_are_saved_and_friendly_labels_displayed(qtbot):
@@ -129,21 +134,21 @@ def test_device_names_are_saved_and_friendly_labels_displayed(qtbot):
         {"name": "speakers.monitor", "description": "Desk speakers", "is_monitor": True},
     ]
     window.set_sources(devices)
-    preferences = window.pages["preferences"]
-    assert preferences.microphone_source.currentText() == "USB Microphone"
-    assert preferences.microphone_source.findText("Desk speakers") < 0
-    preferences.output_source.setCurrentText("Desk speakers")
-    selected = preferences.collect()
-    assert selected.microphone_source == "usb.mic"
-    assert selected.output_source == "speakers.monitor"
-    window.update_settings(selected)
+    input_panel = window.pages["input"].tool_settings
+    output_panel = window.pages["output"].tool_settings
+    assert input_panel.microphone_source.currentText() == "USB Microphone"
+    assert input_panel.microphone_source.findText("Desk speakers") < 0
+    output_panel.output_source.setCurrentText("Desk speakers")
+    assert input_panel.collect()["microphone_source"] == "usb.mic"
+    assert output_panel.collect()["output_source"] == "speakers.monitor"
+    output_panel.save_button.click()
     window.set_sources(devices)
-    assert preferences.output_source.currentText() == "Desk speakers"
-    preferences.microphone_source.setCurrentIndex(0)
-    assert preferences.collect().microphone_source == ""
-    assert not preferences.output_source.isEditable()
-    preferences.output_source.setEditText("custom.monitor")
-    assert preferences.collect().output_source == "speakers.monitor"
+    assert output_panel.output_source.currentText() == "Desk speakers"
+    input_panel.microphone_source.setCurrentIndex(0)
+    assert input_panel.collect()["microphone_source"] == ""
+    assert not output_panel.output_source.isEditable()
+    output_panel.output_source.setEditText("custom.monitor")
+    assert output_panel.collect()["output_source"] == "speakers.monitor"
 
 
 def test_settings_update_does_not_emit_feedback_and_key_clears(qtbot):
@@ -207,7 +212,7 @@ def test_remove_key_and_tts_model_choices(qtbot):
     assert choices.findText("gpt-realtime-2.1-mini") >= 0
     assert choices.findText("gpt-realtime-translate") < 0
     assert choices.findText("gpt-realtime-whisper") < 0
-    assert preferences.instructions["translation_instructions"].tabChangesFocus()
+    assert window.pages["translate"].tool_settings.instructions["translation_instructions"].tabChangesFocus()
 
 
 def test_speech_replay_is_forwarded_to_controller(qtbot):
@@ -273,17 +278,19 @@ def test_proxy_preferences_round_trip_and_pending_connection_value(qtbot):
     preferences = window.pages["preferences"]
     assert preferences.api_proxy_url.text() == "http://proxy.example:8080"
     preferences.api_proxy_url.setText("  socks5://proxy.example:1080  ")
-    preferences.models["input_model"].addItem("test-transcribe-model")
-    preferences.models["input_model"].setCurrentText("test-transcribe-model")
+    input_panel = window.pages["input"].tool_settings
+    input_panel.models["input_model"].addItem("test-transcribe-model")
+    input_panel.models["input_model"].setCurrentText("test-transcribe-model")
     assert window.connection_proxy_url() == "socks5://proxy.example:1080"
-    assert preferences.models["input_model"].currentText() == "test-transcribe-model"
+    assert input_panel.models["input_model"].currentText() == "test-transcribe-model"
     saved = preferences.collect()
-    assert saved.api_proxy_url == "socks5://proxy.example:1080"
-    window.update_settings(saved)
-    assert preferences.api_proxy_url.text() == saved.api_proxy_url
+    assert saved["api_proxy_url"] == "socks5://proxy.example:1080"
+    window._save_preferences(saved)
+    assert preferences.api_proxy_url.text() == saved["api_proxy_url"]
+    assert input_panel.models["input_model"].currentText() == "test-transcribe-model"
     preferences.api_proxy_url.clear()
     assert window.connection_proxy_url() == ""
-    assert preferences.collect().api_proxy_url == ""
+    assert preferences.collect()["api_proxy_url"] == ""
 
 
 def test_translate_contains_speech_for_both_text_panes(qtbot):
@@ -305,8 +312,9 @@ def test_translate_contains_speech_for_both_text_panes(qtbot):
     window.set_translation("Translated words")
     preferences = window.pages["preferences"]
     preferences.instructions["tts_instructions"].setPlainText("Speak slowly.")
-    preferences.target_language.setCurrentText("Japanese")
     preferences.save_preferences.click()
+    page.tool_settings.target_language.setCurrentText("Japanese")
+    page.tool_settings.save_button.click()
     requested = QSignalSpy(window.speech_requested)
     page.speak_original.click()
     page.speak_translation.click()
@@ -335,25 +343,17 @@ def test_caption_translation_option_updates_generation_and_visibility(qtbot):
     assert page.option.isChecked()
 
 
-def test_preferences_are_grouped_into_five_tabs(qtbot):
+def test_preferences_are_global_and_tool_settings_are_on_their_pages(qtbot):
     window = MainWindow(Settings(), True)
     qtbot.addWidget(window)
     page = window.pages["preferences"]
-    assert page.tabs.count() == 5
-    assert [page.tabs.tabText(i) for i in range(5)] == [
-        "Connection",
-        "Recognition",
-        "Translation / speech",
-        "Handwriting",
-        "Shortcuts",
+    assert [page.tabs.tabText(i) for i in range(page.tabs.count())] == [
+        "Connection", "Shared speech", "Shortcuts"
     ]
-    assert set(page.models) == {
-        "input_model",
-        "output_model",
-        "translation_model",
-        "tts_model",
-        "drawing_model",
-    }
+    assert set(page.models) == {"tts_model"}
+    for mode in ("input", "output", "translate", "drawing"):
+        assert window.pages[mode].tool_settings.mode == mode
+        assert window.pages[mode].advanced.toggle.text() == "Settings"
 
 
 def test_tool_layouts_fit_at_minimum_window_size(qtbot):
@@ -362,14 +362,18 @@ def test_tool_layouts_fit_at_minimum_window_size(qtbot):
     window.show()
     for size in [(1120, 780), (850, 620)]:
         window.resize(*size)
-        for mode in ("input", "output", "translate"):
+        for mode in ("input", "output", "translate", "drawing"):
             window.show_page(mode)
             page = window.pages[mode]
-            qtbot.wait(20)
-            content = page.splitter if mode in ("output", "translate") else page.results
-            assert content.height() >= 100
-            assert page.scroll.horizontalScrollBar().maximum() == 0
-            assert not hasattr(page, "instructions")
+            for expanded in (False, True):
+                page.advanced.toggle.setChecked(expanded)
+                qtbot.wait(20)
+                assert page.scroll.horizontalScrollBar().maximum() == 0, (mode, expanded)
+                if not expanded:
+                    content = page.splitter if mode in ("output", "translate") else (
+                        page.results if mode == "input" else page.canvas
+                    )
+                    assert content.height() >= 100
 
 
 def test_preferences_tabs_and_footer_remain_separate_at_minimum_size(qtbot):

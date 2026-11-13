@@ -10,9 +10,9 @@ from lang_handler.jobs import Jobs
 
 
 class CaptionPipeline(QObject):
-    transcript = Signal(str, str)
-    translation = Signal(str, str)
-    completed = Signal(str, str, str, str)
+    transcript = Signal(str, str, int)
+    translation = Signal(str, int, object)
+    completed = Signal(str, str, object, str)
     error = Signal(str, str)
     pending_changed = Signal(str, int)
 
@@ -23,6 +23,7 @@ class CaptionPipeline(QObject):
         self.busy = {mode: False for mode in self.queues}
         self.generations = {mode: 0 for mode in self.queues}
         self.active_translation = None
+        self._last_segment_id = 0
         self.closed = False
 
     def enqueue(self, mode, audio, settings, key):
@@ -49,7 +50,7 @@ class CaptionPipeline(QObject):
             if self.active_translation is not None:
                 pending.append(self.active_translation)
                 self.active_translation = None
-            pending.extend((text, model) for text, _, _, model in self.queues["translation"])
+            pending.extend((text, model) for _, text, _, _, model in self.queues["translation"])
             self.queues["translation"].clear()
             for text, model in pending:
                 self.completed.emit("output", text, "", model)
@@ -77,7 +78,9 @@ class CaptionPipeline(QObject):
         def success(text):
             if self.closed or generation != self.generations[mode] or not text.strip():
                 return
-            self.transcript.emit(mode, text)
+            self._last_segment_id += 1
+            segment_id = self._last_segment_id
+            self.transcript.emit(mode, text, segment_id)
             if mode == "output" and settings.translation_enabled:
                 if len(self.queues["translation"]) >= 6:
                     self.abort(mode)
@@ -87,7 +90,7 @@ class CaptionPipeline(QObject):
                         "Translation is falling behind. Capture stopped; choose a faster translation model or disable translation.",
                     )
                     return
-                self.queues["translation"].append((text, settings, key, model))
+                self.queues["translation"].append((segment_id, text, settings, key, model))
                 self._translate()
             else:
                 self.completed.emit(mode, text, "", model)
@@ -110,7 +113,7 @@ class CaptionPipeline(QObject):
         if self.closed or self.busy[mode] or not self.queues[mode]:
             return
         self.busy[mode] = True
-        text, settings, key, asr_model = self.queues[mode].popleft()
+        segment_id, text, settings, key, asr_model = self.queues[mode].popleft()
         self.active_translation = (text, asr_model)
         generation = self.generations[mode]
 
@@ -122,6 +125,7 @@ class CaptionPipeline(QObject):
                     settings.translation_model,
                     settings.target_language,
                     settings.translation_instructions,
+                    settings.translation_reasoning,
                 )
             finally:
                 service.close()
@@ -129,7 +133,7 @@ class CaptionPipeline(QObject):
         def success(translated):
             if generation == self.generations[mode] and not self.closed:
                 self.active_translation = None
-                self.translation.emit("output", translated)
+                self.translation.emit("output", segment_id, translated)
                 self.completed.emit("output", text, translated, asr_model)
 
         def failed(message):

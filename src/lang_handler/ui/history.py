@@ -128,6 +128,8 @@ class HistoryPage(QWidget):
             translation = entry.get("translated_text", "")
             self.translation.text.setPlainText(translation)
             self.translation.setVisible(bool(translation))
+            self.detail.set_pronunciation(entry.get("source_pronunciation", ""))
+            self.translation.set_pronunciation(entry.get("translation_pronunciation", ""))
 
     def _delete(self):
         choice = QMessageBox.question(

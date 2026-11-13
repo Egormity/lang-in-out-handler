@@ -60,8 +60,6 @@ QScrollBar:vertical { background: #181d23; width: 9px; margin: 0; }
 QScrollBar::handle:vertical { background: #455665; min-height: 28px; border-radius: 4px; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QSplitter::handle { background: #181d23; width: 12px; }
-QProgressBar#audioLevel { border: 1px solid #36424e; border-radius: 5px; background: #11171d; text-align: center; font-size: 10px; }
-QProgressBar#audioLevel::chunk { background: #326451; border-radius: 4px; }
 QTableWidget { background: #11171d; border: 1px solid #3b4653; gridline-color: #2e3a45; }
 QTableWidget::item { padding: 6px; }
 QTableWidget::item:selected { background: #2a5143; }

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from lang_handler.results import TranslationResult
 from lang_handler.settings import Settings
 
 from .capture_page import CapturePage
@@ -47,6 +48,7 @@ class MainWindow(QMainWindow):
     def __init__(self, settings: Settings, api_key_present: bool = False):
         super().__init__()
         self.settings = settings
+        self._reset_all_pending = False
         self.setWindowTitle("Lang In/Out")
         self.resize(1120, 780)
         self.setMinimumSize(850, 620)
@@ -136,7 +138,7 @@ class MainWindow(QMainWindow):
             page.file_requested.connect(
                 lambda path, chunked, key=mode: self._file(key, path, chunked)
             )
-            page.options_changed.connect(self.sync_mode_settings)
+            page.options_changed.connect(self._apply_settings_patch)
             page.speech_requested.connect(self._speak)
         self.pages["output"].overlay_requested.connect(self.overlay_requested)
         self.pages["translate"].requested.connect(self._translate)
@@ -146,7 +148,11 @@ class MainWindow(QMainWindow):
         self.pages["drawing"].speech_requested.connect(self._speak)
         self.pages["drawing"].speech_stop_requested.connect(self.speech_stop_requested)
         self.pages["history"].speech_requested.connect(self._speak)
+        for mode in ("input", "output", "translate", "drawing"):
+            self.pages[mode].settings_saved.connect(self._apply_settings_patch)
+        self.pages["translate"].options_changed.connect(self._apply_settings_patch)
         preferences = self.pages["preferences"]
+        preferences.reset_all_requested.connect(self._stage_all_defaults)
         preferences.saved.connect(self._save_preferences)
         preferences.key_saved.connect(self.key_saved)
         preferences.key_test_requested.connect(self.key_test_requested)
@@ -156,17 +162,23 @@ class MainWindow(QMainWindow):
 
     def sync_mode_settings(self):
         """Commit current mode controls before a request, including shortcut requests."""
-        self.settings = replace(
-            self.settings,
-            target_language=self.pages["translate"].target.currentText().strip() or "English",
-            input_chunked=self.pages["input"].chunked(),
-            output_chunked=self.pages["output"].chunked(),
-            auto_paste=self.pages["input"].option.isChecked(),
-            translation_enabled=self.pages["output"].option.isChecked(),
-            translation_visible=self.pages["output"].option.isChecked(),
-        )
-        self.pages["preferences"].settings = self.settings
-        self.settings_saved.emit(self.settings)
+        self._apply_settings_patch({
+            "target_language": self.pages["translate"].target.currentText() or "English",
+            "input_chunked": self.pages["input"].chunked(),
+            "output_chunked": self.pages["output"].chunked(),
+            "translation_enabled": self.pages["output"].option.isChecked(),
+            "translation_visible": self.pages["output"].option.isChecked(),
+        })
+
+    def _apply_settings_patch(self, patch):
+        settings = replace(self.settings, **patch)
+        self.update_settings(settings)
+        self.settings_saved.emit(settings)
+
+    def _stage_all_defaults(self):
+        self._reset_all_pending = True
+        for mode in ("input", "output", "translate", "drawing"):
+            self.pages[mode].tool_settings.reset_section()
 
     def _capture(self, mode, chunked):
         self.sync_mode_settings()
@@ -186,9 +198,11 @@ class MainWindow(QMainWindow):
     def _drawing(self, image, revision):
         self.drawing_requested.emit(image, revision)
 
-    def _save_preferences(self, settings):
-        self.update_settings(settings)
-        self.settings_saved.emit(settings)
+    def _save_preferences(self, patch):
+        if self._reset_all_pending:
+            patch = {**Settings().to_dict(), **patch}
+            self._reset_all_pending = False
+        self._apply_settings_patch(patch)
 
     def show_page(self, mode: str):
         mode = "translate" if mode == "tts" else mode
@@ -212,16 +226,25 @@ class MainWindow(QMainWindow):
                 ("●  " if active else "") + ("Voice input" if mode == "input" else "Live captions")
             )
 
-    def append_result(self, mode: str, text: str, translation: str = ""):
+    def append_result(self, mode: str, text: str, translation="", *, segment_id=None):
         if mode not in ("input", "output"):
             return
         page = self.pages[mode]
-        page.results.append(text)
+        result = translation if isinstance(translation, TranslationResult) else TranslationResult(translation)
+        page.results.append(text, result.source_pronunciation, segment_id=segment_id)
         if page.translations:
-            page.translations.append(translation)
+            page.translations.append(result.translation, result.translation_pronunciation)
 
-    def set_translation(self, text: str):
-        self.pages["translate"].result.text.setPlainText(text)
+    def annotate_translation(self, mode, segment_id, result):
+        page = self.pages[mode]
+        visible = page.results.set_pronunciation_for(segment_id, result.source_pronunciation)
+        if visible and page.translations:
+            page.translations.append(result.translation, result.translation_pronunciation)
+
+    def set_translation(self, result, source_text=None, target_language=None):
+        if isinstance(result, str):
+            result = TranslationResult(result)
+        return self.pages["translate"].set_result(result, source_text, target_language)
 
     def set_speech(self, path: str):
         self.speech_controls.set_audio(path)
@@ -251,9 +274,12 @@ class MainWindow(QMainWindow):
 
     def set_models(self, model_ids: list[str]):
         self.pages["preferences"].set_models(model_ids)
+        for mode in ("input", "output", "translate", "drawing"):
+            self.pages[mode].tool_settings.set_models(model_ids)
 
     def set_sources(self, sources: list[dict]):
-        self.pages["preferences"].set_sources(sources)
+        for mode in ("input", "output"):
+            self.pages[mode].tool_settings.set_sources(sources)
 
     def set_level(self, mode: str, value: float):
         if mode in ("input", "output"):

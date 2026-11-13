@@ -6,14 +6,15 @@ from copy import deepcopy
 from dataclasses import replace
 
 from PySide6.QtCore import QObject
-from PySide6.QtWidgets import QApplication
 
 from .api import OpenAIService
 from .audio import AudioCapture
-from .desktop import clipboard_text, copy_and_paste
+from .desktop import clipboard_text
+from .dictation import DictationDelivery
 from .handwriting import Handwriting
 from .jobs import Jobs
 from .pipeline import CaptionPipeline
+from .results import TranslationResult
 from .shortcuts import GlobalShortcuts
 from .workflows import Workflows
 
@@ -29,11 +30,11 @@ class Controller(QObject):
         self.jobs = Jobs(self)
         self.pipeline = CaptionPipeline(self.jobs, self)
         self.workflows = Workflows(self)
+        self.dictation = DictationDelivery(self)
         self.handwriting = Handwriting(self)
         self.shortcuts = GlobalShortcuts()
         self.applied_shortcuts = None
         self.accept_audio = {"input": True, "output": True}
-        self.last_dictation = ""
         self.captures = {mode: AudioCapture(self) for mode in ("input", "output")}
         for mode, capture in self.captures.items():
             capture.chunk.connect(lambda audio, m=mode: self._audio(m, audio))
@@ -93,7 +94,7 @@ class Controller(QObject):
             self.fail(str(exc))
 
     def save_settings(self, settings):
-        if not 2 <= settings.chunk_seconds <= 30:
+        if any(not 2 <= value <= 30 for value in (settings.input_chunk_seconds, settings.output_chunk_seconds)):
             self.fail("Chunk length must be between 2 and 30 seconds.")
             return
         self.settings = deepcopy(settings)
@@ -169,8 +170,8 @@ class Controller(QObject):
             source = self.settings.microphone_source if mode == "input" else self.settings.output_source or "@DEFAULT_MONITOR@"
             self.accept_audio[mode] = True
             if mode == "input":
-                self.last_dictation = ""
-            capture.start(source, chunked, self.settings.chunk_seconds)
+                self.dictation.reset()
+            capture.start(source, chunked, getattr(self.settings, f"{mode}_chunk_seconds"))
             self.window.set_recording(mode, True)
             if mode == "output":
                 self.show_overlay()
@@ -205,23 +206,16 @@ class Controller(QObject):
         if mode == "output":
             self.overlay.set_status(message)
 
-    def _transcript(self, mode, text):
-        self.window.append_result(mode, text)
+    def _transcript(self, mode, text, segment_id=None):
+        self.window.append_result(mode, text, segment_id=segment_id)
         if mode == "output":
-            self.overlay.append_caption(text)
+            self.overlay.append_caption(text, segment_id=segment_id)
         else:
-            try:
-                paste = self.settings.auto_paste and QApplication.activeWindow() is None
-                separator = " " if (paste and self.last_dictation and text and
-                                     self.last_dictation[-1].isascii() and text[0].isascii()) else ""
-                self.status(copy_and_paste(separator + text, paste))
-                self.last_dictation = text if paste else ""
-            except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
-                self.fail("Transcript ready; clipboard insertion failed: " + str(exc))
+            self.dictation.enqueue(text, self.settings.input_delivery)
 
-    def _translation(self, mode, text):
-        self.window.append_result(mode, "", text)
-        self.overlay.append_caption("", text)
+    def _translation(self, mode, segment_id, result):
+        self.window.annotate_translation(mode, segment_id, result)
+        self.overlay.annotate_translation(segment_id, result)
 
     def _pending(self, mode, count):
         if mode == "output" and self.accept_audio[mode]:
@@ -232,7 +226,12 @@ class Controller(QObject):
             self.window.set_status("Capture stopped. Recognized text is available in history.")
 
     def remember(self, mode, text, translation="", model=""):
-        self.store.add_history(mode, text, translation, model)
+        result = translation if isinstance(translation, TranslationResult) else TranslationResult(translation)
+        self.store.add_history(
+            mode, text, result.translation, model,
+            source_pronunciation=result.source_pronunciation,
+            translation_pronunciation=result.translation_pronunciation,
+        )
         self.refresh_history()
 
     def refresh_history(self):
@@ -279,6 +278,7 @@ class Controller(QObject):
 
     def shutdown(self):
         self.pipeline.shutdown()
+        self.dictation.close()
         self.overlay.pin_control.stop()
         self.handwriting.cancel()
         self.window.pages["drawing"].shutdown()

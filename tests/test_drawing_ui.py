@@ -98,12 +98,12 @@ def test_stale_result_is_ignored_and_auto_off_cancels(qtbot):
 
 def test_handwriting_preferences_disable_delay_but_keep_manual(qtbot):
     window, page = drawing_window(qtbot)
-    preferences = window.pages["preferences"]
+    preferences = page.tool_settings
     preferences.drawing_auto_send.setChecked(False)
     preferences.drawing_delay.setValue(2.3)
     assert not preferences.drawing_delay.isEnabled()
     selected = preferences.collect()
-    assert selected.drawing_debounce_ms == 2300
+    assert selected["drawing_debounce_ms"] == 2300
     window._save_preferences(selected)
     assert not page.settings.drawing_auto_send
     stroke(qtbot, page.canvas)

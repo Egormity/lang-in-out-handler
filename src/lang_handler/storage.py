@@ -27,25 +27,46 @@ class Store:
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA foreign_keys=ON")
         version = self._db.execute("PRAGMA user_version").fetchone()[0]
-        if version > 1:
+        if version > 2:
             self._db.close()
             raise RuntimeError("This history database requires a newer version of Lang In/Out.")
+        try:
+            self._initialize_schema(version)
+        except Exception:
+            self._db.close()
+            raise
+
+    def _initialize_schema(self, version: int) -> None:
+        # One schema head. Existing v1 history is upgraded additively in the same
+        # transaction as the version marker, keeping IDs, timestamps, and settings.
         with self._db:
-            self._db.executescript("""
+            self._db.execute("BEGIN IMMEDIATE")
+            self._db.execute("""
                 CREATE TABLE IF NOT EXISTS preferences (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
-                );
+                )
+            """)
+            self._db.execute("""
                 CREATE TABLE IF NOT EXISTS history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     mode TEXT NOT NULL,
                     source_text TEXT NOT NULL,
                     translated_text TEXT NOT NULL DEFAULT '',
+                    source_pronunciation TEXT NOT NULL DEFAULT '',
+                    translation_pronunciation TEXT NOT NULL DEFAULT '',
                     model TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                );
-                PRAGMA user_version=1;
+                )
             """)
+            if version < 2:
+                columns = {row["name"] for row in self._db.execute("PRAGMA table_info(history)")}
+                for column in ("source_pronunciation", "translation_pronunciation"):
+                    if column not in columns:
+                        self._db.execute(
+                            f"ALTER TABLE history ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
+                        )
+            self._db.execute("PRAGMA user_version=2")
 
     def load_settings(self) -> Settings:
         with self._lock:
@@ -70,12 +91,27 @@ class Store:
             )
 
     def add_history(
-        self, mode: str, source_text: str, translated_text: str = "", model: str = ""
+        self,
+        mode: str,
+        source_text: str,
+        translated_text: str = "",
+        model: str = "",
+        *,
+        source_pronunciation: str = "",
+        translation_pronunciation: str = "",
     ) -> int:
         with self._lock, self._db:
             cursor = self._db.execute(
-                "INSERT INTO history(mode,source_text,translated_text,model) VALUES(?,?,?,?)",
-                (mode, source_text, translated_text, model),
+                "INSERT INTO history(mode,source_text,translated_text,model,"
+                "source_pronunciation,translation_pronunciation) VALUES(?,?,?,?,?,?)",
+                (
+                    mode,
+                    source_text,
+                    translated_text,
+                    model,
+                    source_pronunciation,
+                    translation_pronunciation,
+                ),
             )
             return int(cursor.lastrowid)
 

@@ -1,8 +1,6 @@
-"""Audio source selection and readable signal level display."""
+"""Audio source selection using detected desktop devices."""
 
-import math
-
-from PySide6.QtWidgets import QComboBox, QProgressBar
+from PySide6.QtWidgets import QComboBox
 
 
 class AudioSourceCombo(QComboBox):
@@ -12,6 +10,8 @@ class AudioSourceCombo(QComboBox):
         super().__init__()
         self.monitor = monitor
         self.setEditable(False)
+        self.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.setMinimumContentsLength(16)
         self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.setToolTip("Choose a detected audio device.")
         self.set_sources([])
@@ -43,27 +43,3 @@ class AudioSourceCombo(QComboBox):
             self.addItem(str(source.get("description") or name), name)
         self.set_value(selected)
         self.blockSignals(False)
-
-
-class AudioLevel(QProgressBar):
-    """Show a decibel scale so quiet, valid speech is still visibly active."""
-
-    def __init__(self):
-        super().__init__()
-        self.setObjectName("audioLevel")
-        self.setRange(0, 60)
-        self.setFixedHeight(22)
-        self.setTextVisible(True)
-        self.setToolTip(
-            "Incoming audio level. If this stays silent during playback, check the source in Preferences."
-        )
-        self.set_level(0)
-
-    def set_level(self, amplitude: float):
-        if not math.isfinite(amplitude) or amplitude <= 0:
-            self.setValue(0)
-            self.setFormat("No audio detected")
-            return
-        decibels = max(-60.0, 20 * math.log10(min(amplitude, 1.0)))
-        self.setValue(round(decibels + 60))
-        self.setFormat(f"Audio level: {decibels:.0f} dB")

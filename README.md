@@ -12,11 +12,11 @@ A Linux desktop app for dictation, live bilingual captions, translation, and tex
 | Handwriting | Draw with a mouse or tablet pen, in the main window or an always-on-top floating canvas. Recognize automatically or use Send to transcribe, then copy or speak individual candidate readings. |
 | History | Search, browse, copy, or speak locally saved text; delete history from the app. |
 
-All model, voice, instruction, recognition, and floating-window settings live in **Preferences**, grouped by connection, recognition, translation/speech, handwriting, and shortcuts. Speech settings apply to every **Speak** button. Recognition instructions supply vocabulary/context to the speech model; they are not a general text-editing instruction.
+Each tool page has a collapsible **Settings** section for its model, language, instructions, and behavior. **Preferences** contains only the API connection, shared speech playback settings, and global shortcuts. Speech settings apply to every **Speak** button. Recognition instructions supply vocabulary/context to the speech model; they are not a general text-editing instruction.
 
-Dropdowns accept selections only. Use **Refresh models** in Connection to load model choices available to your account. Number fields support direct typing plus large **− / +** buttons; opacity is displayed as a percentage. Every preference has a **Reset** button, and **Reset all** restores defaults in the form. Choose **Save preferences** to apply them. Resetting preferences keeps the API key and history; the separate Remove key and Delete history actions control those.
+Dropdowns accept selections only. Use **Refresh models** in Connection to load model choices available to your account. Number fields support direct typing plus large **− / +** buttons; opacity is displayed as a percentage. Every option has a **Reset** button. **Reset section** restores the current tool; **Save settings** applies its edits. Global **Reset all** stages defaults for every tool; **Save preferences** applies them. Resetting preferences keeps the API key and history; the separate Remove key and Delete history actions control those.
 
-Floating windows contain content and actions only. Configure transcript/translation visibility, opacity, text size, and pinning in Preferences. Turning off **Show translation** also stops translation of new audio. Hiding the caption window does not stop capture; use **Stop**, the capture shortcut, or the tray menu.
+Floating windows contain content and actions only. Configure transcript/translation visibility, opacity, text size, and pinning under **Live captions → Settings**. Turning off **Show translation** also stops translation of new audio. Hiding the caption window does not stop capture; use **Stop**, the capture shortcut, or the tray menu.
 
 ## Install on Ubuntu / GNOME
 
@@ -32,21 +32,27 @@ lang-in-out
 
 The installer creates a user-local launcher and applications-menu entry. On Debian/Ubuntu it can download and extract missing Qt X11 cursor libraries into the virtual environment without sudo. FFmpeg for file conversion is included through `imageio-ffmpeg`.
 
-Open **Preferences**, save your OpenAI API key, and use **Test connection / Refresh models**. Model discovery checks authentication; a successful paid transcription or translation also requires available API credit. Set the source language, translation target, models, devices, and shortcuts, then save preferences.
+Open **Preferences**, save your OpenAI API key, and use **Test connection / Refresh models**. Model discovery checks authentication; a successful paid transcription or translation also requires available API credit. Choose source languages, translation targets, models, and devices in each tool’s Settings section. Configure shared speech and shortcuts in Preferences.
 
 If your desktop launcher does not inherit the terminal's proxy settings, set **Proxy URL** in Preferences. The saved HTTP(S)/SOCKS proxy applies to every mode, including Realtime speech; leaving it blank uses the process environment. Test connection uses the key and proxy currently entered in the form and saves them before checking, without discarding other pending preferences. Region/network restrictions are reported separately from invalid API keys.
 
 Defaults: `gpt-transcribe` for speech recognition, `gpt-6-luna` for text translation, and `gpt-realtime-2.1-mini` for speech generation. Model choices depend on your API account and can be refreshed in Connection. The app uses bounded audio uploads for both once and chunk modes; live-only transcription models are not selectable suggestions.
 
+### Translation and pronunciation
+
+Translation returns three separate fields: translated text, a pronunciation guide for the original, and a pronunciation guide for the translation. Japanese uses romaji; other languages use appropriate romanization or IPA. Each guide can be selected or copied. The same guides accompany translated caption chunks and remain available in History.
+
+**Reasoning** offers Low, Medium, and High on Translate and Handwriting, with **Medium** as the default. The control is disabled for models without reasoning support. Caption translation shares its model, target language, instructions, and reasoning with Translate; edit these from either page.
+
 ### Handwriting
 
 Open **Handwriting** and draw with your mouse or tablet pen. Use **Undo** and **Clear** as needed. **Send to transcribe** works with automatic recognition turned off. Possible readings appear below the canvas, most likely first, with individual **Copy** and **Speak** buttons.
 
-Choose **Float window** to keep handwriting above other applications. Configure **Keep handwriting on top** in Preferences. **Dock** (or closing the floating window) returns the same canvas to the main window without losing strokes, recognized text, or a pending recognition. You can reopen it from the tray or with `lang-in-out --action drawing`. GNOME may ask you to click an unfocused window once before it can be pinned.
+Choose **Float window** to keep handwriting above other applications. Configure **Keep on top** under **Handwriting → Settings**. **Dock** (or closing the floating window) returns the same canvas to the main window without losing strokes, recognized text, or a pending recognition. You can reopen it from the tray or with `lang-in-out --action drawing`. GNOME may ask you to click an unfocused window once before it can be pinned.
 
 Pen handling supports Qt tablet events and driver-emulated mouse events. Pressure contact can start a stroke when a driver omits the initial tip-press event; hovering does not draw. Tablet behavior depends on the installed tablet driver and desktop session.
 
-In **Preferences**, choose the handwriting model, enable/disable automatic recognition, and set the pause from 0.2 to 10 seconds (1.2 seconds by default). Only the latest canvas snapshot is queued while recognition is busy, blank canvases are never sent, and results for an older drawing cannot overwrite newer content. Each automatic recognition is a billable image request.
+In **Handwriting → Settings**, choose the model, reasoning level, and writing language (or Auto detect), enable/disable automatic recognition, and set the pause from 0.2 to 10 seconds (1.2 seconds by default). Only the latest canvas snapshot is queued while recognition is busy, blank canvases are never sent, and results for an older drawing cannot overwrite newer content. Each automatic recognition is a billable image request.
 
 Handwriting defaults to `gpt-6-luna`. The model returns a strict JSON object containing an array of candidate strings; the app validates, deduplicates, and displays that array as individual readings. A blank or unreadable image returns no candidates. Recognition accuracy depends on handwriting and model choice. Canvas images are not retained in history; recognized candidates are.
 
@@ -69,14 +75,16 @@ lang-in-out --action tts
 lang-in-out --action drawing
 ```
 
+Under **Voice input → Settings → After transcription**, choose **Copy to clipboard**, **Paste to selection**, or **Copy and paste**. Paste replaces selected text or inserts at the focused cursor. Paste-only temporarily uses the clipboard, then restores its previous preferred format; multi-format clipboard items retain one rich representation. Delivery runs in order without blocking the interface. When this app has focus, paste-only leaves the clipboard unchanged and keeps the transcript in the app.
+
 The app uses a local single-instance connection, so shortcuts work whether the window is open or hidden. Closing the main window keeps the app in the system tray when a tray is available. Quit from the tray or run `lang-in-out --action quit`. Without a tray, closing the main window quits the app.
 
 For background clipboard access and automatic insertion on Wayland, install `wl-clipboard` and configure `ydotool` with an accessible user socket. On X11, install `xdotool`. If insertion is unavailable, your transcript remains on the clipboard for Ctrl+V. Input launched with a shortcut does not activate the main window. If the app itself has focus, it copies instead of pasting into its own controls.
 
 ## Audio and captions
 
-- The default microphone and speaker devices are never changed. Select a specific device in Preferences if desired.
-- Chunk duration is configurable from 2–30 seconds (5 seconds by default). Captions appear after each chunk and API processing. Chunks are processed in order; silence is skipped.
+- The default microphone and speaker devices are never changed. Select a specific device in the corresponding capture tool’s Settings if desired.
+- Chunk duration is independently configurable for voice input and captions from 2–30 seconds (5 seconds by default). Captions appear after each chunk and API processing. Chunks are processed in order; silence is skipped.
 - Transcription and translation have separate queues, so recognized text can appear before its translation. If either queue falls too far behind, capture stops with a visible error rather than building an unbounded backlog.
 - Stop flushes the last partial chunk. A single recording/import is limited to 10 minutes; use chunks for longer audio. A single upload must be below 25 MB.
 - Chunk boundaries can split speech, and live requests have less context than complete recordings. Longer chunks trade latency for more context.

@@ -17,9 +17,10 @@ from .common import button, label
 class EntryRow(QWidget):
     speech_requested = Signal(str)
 
-    def __init__(self, text: str, *, compact=False):
+    def __init__(self, text: str, pronunciation="", *, compact=False, segment_id=None):
         super().__init__()
         self.text = text
+        self.segment_id = segment_id
         self.setObjectName("entryRow")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         layout = QVBoxLayout(self)
@@ -33,6 +34,15 @@ class EntryRow(QWidget):
         self.content.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.content.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.content)
+        self.guide = QLabel()
+        self.guide.setObjectName("muted")
+        self.guide.setTextFormat(Qt.TextFormat.PlainText)
+        self.guide.setWordWrap(True)
+        self.guide.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.guide.setMinimumWidth(0)
+        self.guide.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.set_pronunciation(pronunciation)
+        layout.addWidget(self.guide)
         actions = QHBoxLayout()
         actions.setSpacing(2)
         actions.addStretch()
@@ -47,6 +57,13 @@ class EntryRow(QWidget):
         self.copy.clicked.connect(lambda: QApplication.clipboard().setText(self.text))
         self.speak.clicked.connect(lambda: self.speech_requested.emit(self.text))
         layout.addLayout(actions)
+
+
+    def set_pronunciation(self, text):
+        self.pronunciation = text
+        self.guide.setText(text)
+        self.guide.setVisible(bool(text))
+        self.guide.setAccessibleName("Pronunciation: " + text)
 
 
 class EntryList(QWidget):
@@ -98,11 +115,11 @@ class EntryList(QWidget):
         scrollbar.rangeChanged.connect(self._range_changed)
         scrollbar.valueChanged.connect(self._position_changed)
 
-    def append(self, text: str):
+    def append(self, text: str, pronunciation="", *, segment_id=None):
         text = text.strip()
         if not text:
             return
-        row = EntryRow(text, compact=self.compact)
+        row = EntryRow(text, pronunciation, compact=self.compact, segment_id=segment_id)
         row.content.setStyleSheet(f"font-size: {self.text_size}px;")
         row.speech_requested.connect(self.speech_requested)
         self.entries.append(row)
@@ -130,6 +147,13 @@ class EntryList(QWidget):
         self._following = True
         self.empty.show()
         self.copy_all.setEnabled(False)
+
+    def set_pronunciation_for(self, segment_id, pronunciation):
+        for row in self.entries:
+            if segment_id is not None and row.segment_id == segment_id:
+                row.set_pronunciation(pronunciation)
+                return True
+        return False
 
     def toPlainText(self) -> str:
         return "\n".join(row.text for row in self.entries)

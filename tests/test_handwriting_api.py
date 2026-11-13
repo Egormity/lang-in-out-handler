@@ -20,6 +20,7 @@ def test_canvas_uses_vision_input_and_never_response_storage():
     ]
     payload = client.responses.create.call_args.kwargs
     assert payload["store"] is False
+    assert payload["reasoning"] == {"effort": "medium"}
     image = payload["input"][0]["content"][0]
     assert image["type"] == "input_image"
     assert base64.b64decode(image["image_url"].split(",", 1)[1]) == png
@@ -69,3 +70,26 @@ def test_malformed_candidates_are_rejected(result):
         OpenAIService("test-only", client=client).recognize_handwriting(
             b"\x89PNG\r\n\x1a\ncanvas-test", "gpt-6-luna"
         )
+
+
+def test_canvas_language_and_reasoning_are_sent_to_the_model():
+    client = Mock()
+    client.responses.create.return_value = SimpleNamespace(output_text='{"items": ["カフェ"]}')
+    result = OpenAIService("test-only", client=client).recognize_handwriting(
+        b"\x89PNG\r\n\x1a\ncanvas-test", "gpt-6-luna", reasoning="high", language="ja"
+    )
+    assert result == ["カフェ"]
+    payload = client.responses.create.call_args.kwargs
+    assert payload["reasoning"] == {"effort": "high"}
+    assert "Expected handwriting language: ja" in payload["instructions"]
+
+
+def test_auto_handwriting_language_does_not_force_a_language():
+    client = Mock()
+    client.responses.create.return_value = SimpleNamespace(output_text='{"items": ["café"]}')
+    OpenAIService("test-only", client=client).recognize_handwriting(
+        b"\x89PNG\r\n\x1a\ncanvas-test", "gpt-4.1", language=""
+    )
+    payload = client.responses.create.call_args.kwargs
+    assert "reasoning" not in payload
+    assert "Expected handwriting language" not in payload["instructions"]

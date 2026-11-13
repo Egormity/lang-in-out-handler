@@ -37,7 +37,11 @@ class Handwriting(QObject):
             service = OpenAIService(key, proxy=settings.api_proxy_url or None)
             try:
                 return service.recognize_handwriting(
-                    png, settings.drawing_model, settings.drawing_instructions
+                    png,
+                    settings.drawing_model,
+                    settings.drawing_instructions,
+                    reasoning=settings.drawing_reasoning,
+                    language=settings.drawing_language,
                 )
             finally:
                 service.close()

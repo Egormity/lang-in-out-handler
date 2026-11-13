@@ -96,6 +96,8 @@ def test_connection_proxy_commit_survives_shortcuts_and_preserves_pending_edits(
     preferences = c.window.pages["preferences"]
     preferences.api_proxy_url.setText("http://proxy.example:8080")
     preferences.instructions["tts_instructions"].setPlainText("Pending voice instructions.")
+    drawing = c.window.pages["drawing"].tool_settings
+    drawing.drawing_language.setCurrentText("Japanese")
     c.test_key()
     qtbot.waitUntil(lambda: not c.jobs.active)
     c.window.sync_mode_settings()
@@ -104,3 +106,5 @@ def test_connection_proxy_commit_survives_shortcuts_and_preserves_pending_edits(
     assert c.store.load_settings().api_proxy_url == "http://proxy.example:8080"
     assert preferences.instructions["tts_instructions"].toPlainText() == "Pending voice instructions."
     assert c.settings.tts_instructions == "Speak naturally and clearly."
+    assert drawing.collect()["drawing_language"] == "ja"
+    assert c.settings.drawing_language == ""

@@ -10,10 +10,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .audio_controls import AudioLevel
+from .audio_activity import AudioActivity
 from .common import button, label, title_block
 from .entries import EntryList
-from .sections import tool_layout
+from .sections import ExpandableSection, tool_layout
+from .tool_settings import ToolSettings
 
 
 class CapturePage(QWidget):
@@ -21,7 +22,8 @@ class CapturePage(QWidget):
     stop_requested = Signal()
     file_requested = Signal(str, bool)
     overlay_requested = Signal()
-    options_changed = Signal()
+    options_changed = Signal(object)
+    settings_saved = Signal(object)
     speech_requested = Signal(str)
 
     def __init__(self, mode: str, settings):
@@ -63,15 +65,22 @@ class CapturePage(QWidget):
         actions.addWidget(self.import_button)
         layout.addLayout(actions)
         options = QHBoxLayout()
-        self.option = QCheckBox("Paste into active app" if is_input else "Show translation")
-        self.option.setChecked(settings.auto_paste if is_input else settings.translation_visible)
-        options.addWidget(self.option)
+        self.option = None
+        if not is_input:
+            self.option = QCheckBox("Show translation")
+            self.option.setChecked(settings.translation_visible)
+            options.addWidget(self.option)
         options.addStretch()
+        self.level = AudioActivity()
+        options.addWidget(self.level)
         self.model_label = label(getattr(settings, f"{mode}_model"), True)
         options.addWidget(self.model_label)
         layout.addLayout(options)
-        self.level = AudioLevel()
-        layout.addWidget(self.level)
+        self.advanced = ExpandableSection("Settings")
+        self.tool_settings = ToolSettings(mode, settings)
+        self.tool_settings.saved.connect(self.settings_saved)
+        self.advanced.body_layout.addWidget(self.tool_settings)
+        layout.addWidget(self.advanced)
         self.results = EntryList("Transcript", "Your transcript appears here.")
         self.results.speech_requested.connect(self.speech_requested)
         self.translations = None
@@ -96,13 +105,17 @@ class CapturePage(QWidget):
         self.start_button.clicked.connect(lambda: self.capture_requested.emit(self.chunked()))
         self.stop_button.clicked.connect(self.stop_requested)
         self.import_button.clicked.connect(self._import)
-        self.option.toggled.connect(self._option_changed)
+        if self.option:
+            self.option.toggled.connect(self._option_changed)
+        self.capture_type.currentIndexChanged.connect(
+            lambda: self.options_changed.emit({f"{mode}_chunked": self.chunked()})
+        )
         self.apply_settings(settings)
 
     def _option_changed(self, checked):
         if self.translations:
             self.translations.setVisible(checked)
-        self.options_changed.emit()
+        self.options_changed.emit({"translation_visible": checked, "translation_enabled": checked})
 
     def chunked(self) -> bool:
         return bool(self.capture_type.currentData())
@@ -122,8 +135,7 @@ class CapturePage(QWidget):
         self.import_button.setEnabled(not active)
         self.stop_button.setEnabled(active)
         self.capture_type.setEnabled(not active)
-        if not active:
-            self.level.set_level(0)
+        self.level.set_recording(active)
 
     def clear(self):
         self.results.clear()
@@ -131,12 +143,15 @@ class CapturePage(QWidget):
             self.translations.clear()
 
     def apply_settings(self, settings):
+        self.capture_type.blockSignals(True)
         self.capture_type.setCurrentIndex(int(getattr(settings, f"{self.mode}_chunked")))
-        visible = settings.auto_paste if self.mode == "input" else settings.translation_visible
-        self.option.blockSignals(True)
-        self.option.setChecked(visible)
-        self.option.blockSignals(False)
+        self.capture_type.blockSignals(False)
+        self.tool_settings.update_settings(settings)
+        if self.option:
+            self.option.blockSignals(True)
+            self.option.setChecked(settings.translation_visible)
+            self.option.blockSignals(False)
         self.model_label.setText(getattr(settings, f"{self.mode}_model"))
         if self.translations:
-            self.translations.setVisible(visible)
+            self.translations.setVisible(settings.translation_visible)
             self.results.setVisible(settings.transcript_visible)

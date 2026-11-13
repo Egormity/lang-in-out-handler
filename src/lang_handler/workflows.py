@@ -50,7 +50,7 @@ class Workflows(QObject):
             service = OpenAIService(key, proxy=settings.api_proxy_url or None)
             count = 0
             try:
-                chunks = audio_file_chunks(Path(path), settings.chunk_seconds if chunked else None)
+                chunks = audio_file_chunks(Path(path), getattr(settings, f"{mode}_chunk_seconds") if chunked else None)
                 for audio in chunks:
                     if cancel.is_set():
                         break
@@ -70,6 +70,7 @@ class Workflows(QObject):
                                 settings.translation_model,
                                 settings.target_language,
                                 settings.translation_instructions,
+                                settings.translation_reasoning,
                             )
                         except Exception:  # preserve recognized speech before reporting the failure
                             if not cancel.is_set():
@@ -132,14 +133,16 @@ class Workflows(QObject):
                     settings.translation_model,
                     settings.target_language,
                     settings.translation_instructions,
+                    settings.translation_reasoning,
                 )
             finally:
                 service.close()
 
         def success(translated):
-            self.c.window.set_translation(translated)
+            displayed = self.c.window.set_translation(translated, text, settings.target_language)
             self.c.remember("translate", text, translated, settings.translation_model)
-            self.c.status("Translation ready.")
+            self.c.status("Translation ready." if displayed else
+                          "Translation saved in History; the original text or target language changed.")
 
         self.translation_job = self.c.jobs.submit(
             work, success, self.c.fail, finished=lambda: setattr(self, "translation_job", None)

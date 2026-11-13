@@ -1,18 +1,18 @@
-"""Connection and task settings, organized into focused tabs."""
-
-from dataclasses import replace
+"""Application-wide connection, speech, and shortcut preferences."""
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QTabWidget, QVBoxLayout, QWidget
 
 from . import preference_sections
 from .common import button, label, title_block
+from .model_choices import update_model_choices
 from .preference_controls import PreferenceFields
 from .sections import scrollable_body
 
 
 class PreferencesPage(QWidget):
     saved = Signal(object)
+    reset_all_requested = Signal()
     key_saved = Signal(str)
     key_test_requested = Signal(str)
     models_requested = Signal(str)
@@ -26,7 +26,7 @@ class PreferencesPage(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 24, 24, 20)
         outer.setSpacing(16)
-        outer.addWidget(title_block("Preferences", "Connect OpenAI and make each tool your own."))
+        outer.addWidget(title_block("Preferences", "Connection, shared speech, and global shortcuts. Tool settings are on their own pages."))
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self.tabs.tabBar().setDrawBase(False)
@@ -34,9 +34,7 @@ class PreferencesPage(QWidget):
         self.tabs.addTab(self._connection(settings, api_key_present), "Connection")
         self.models = {}
         for builder, title in [
-            (preference_sections.recognition, "Recognition"),
-            (preference_sections.translation, "Translation / speech"),
-            (preference_sections.handwriting, "Handwriting"),
+            (preference_sections.speech, "Shared speech"),
             (preference_sections.shortcuts, "Shortcuts"),
         ]:
             self.tabs.addTab(builder(self, settings), title)
@@ -123,50 +121,19 @@ class PreferencesPage(QWidget):
         self.key_saved.emit("")
 
     def collect(self):
-        return replace(self.settings, **self.fields.collect())
+        return self.fields.collect()
 
     def reset_all(self):
         self.fields.reset_all()
-        self.save_hint.setText("Defaults restored. Save to apply.")
+        self.save_hint.setText("All defaults restored. Save to apply.")
+        self.reset_all_requested.emit()
 
     def set_models(self, model_ids):
-        for key, widget in self.models.items():
-            selected = widget.currentText()
-            if key in ("input_model", "output_model"):
-                filtered = [m for m in model_ids if "transcribe" in m or "whisper" in m]
-                filtered = [m for m in filtered if "realtime" not in m and "live" not in m]
-            elif key == "tts_model":
-                filtered = [m for m in model_ids if "tts" in m or "realtime" in m]
-                filtered = [
-                    m
-                    for m in filtered
-                    if not any(part in m for part in ("translate", "whisper", "transcribe"))
-                ]
-            else:
-                excluded = (
-                    "audio",
-                    "realtime",
-                    "transcribe",
-                    "tts",
-                    "image",
-                    "embedding",
-                    "search",
-                    "live",
-                )
-                filtered = [
-                    m
-                    for m in model_ids
-                    if m.startswith(("gpt-", "o1", "o3", "o4"))
-                    and not any(x in m for x in excluded)
-                ]
-            widget.clear()
-            widget.addItems(sorted({*filtered, selected}))
-            widget.setCurrentText(selected)
+        update_model_choices(self.models, model_ids)
 
     def update_settings(self, settings):
         self.settings = settings
         self.fields.update(settings)
-        self.drawing_delay.setEnabled(self.drawing_auto_send.isChecked())
         self.save_hint.setText(
             "Unsaved changes. Save to apply."
             if self.fields.has_pending
@@ -174,5 +141,5 @@ class PreferencesPage(QWidget):
         )
 
     def set_sources(self, sources):
-        self.microphone_source.set_sources(sources)
-        self.output_source.set_sources(sources)
+        # Devices are owned by the Voice input and Live captions settings panels.
+        pass

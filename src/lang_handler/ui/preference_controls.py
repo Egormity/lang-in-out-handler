@@ -170,7 +170,9 @@ class PreferenceFields:
                 shortcuts[key.split(":", 1)[1]] = value
             else:
                 values[key] = value
-        values["shortcuts"] = shortcuts
+        if shortcuts:
+            values["shortcuts"] = shortcuts
         # The visible translation pane is also the switch for translation requests.
-        values["translation_enabled"] = values["translation_visible"]
+        if "translation_visible" in values:
+            values["translation_enabled"] = values["translation_visible"]
         return values

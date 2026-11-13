@@ -1,8 +1,9 @@
-"""Minimal floating captions; appearance and visibility live in Preferences."""
+"""Minimal floating captions; appearance and visibility live on the captions page."""
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QSplitter, QVBoxLayout, QWidget
 
+from ..results import TranslationResult
 from ..window_pin import WindowPin
 from .common import button, label
 from .entries import EntryList
@@ -61,7 +62,7 @@ class CaptionOverlay(QWidget):
             self.splitter.addWidget(pane)
         self.splitter.setSizes([450, 450])
         layout.addWidget(self.splitter, 1)
-        self.empty = label("Choose a caption pane in Preferences → Recognition.", True)
+        self.empty = label("Choose a caption pane in Live captions → Settings.", True)
         self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.empty, 1)
         self.status = QLabel()
@@ -95,9 +96,14 @@ class CaptionOverlay(QWidget):
         if not self.pin_control.verified or self.pin_control.desired != enabled:
             self.pin_control.request(enabled)
 
-    def append_caption(self, text: str, translation: str = ""):
-        self.transcript.append(text)
-        self.translation.append(translation)
+    def append_caption(self, text: str, translation="", *, segment_id=None):
+        result = translation if isinstance(translation, TranslationResult) else TranslationResult(translation)
+        self.transcript.append(text, result.source_pronunciation, segment_id=segment_id)
+        self.translation.append(result.translation, result.translation_pronunciation)
+
+    def annotate_translation(self, segment_id, result):
+        if self.transcript.set_pronunciation_for(segment_id, result.source_pronunciation):
+            self.translation.append(result.translation, result.translation_pronunciation)
 
     def set_status(self, text: str):
         self.status.setText(text)

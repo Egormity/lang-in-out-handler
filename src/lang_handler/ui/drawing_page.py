@@ -6,6 +6,8 @@ from PySide6.QtWidgets import QHBoxLayout, QLayout, QScrollArea, QVBoxLayout, QW
 from .common import button, label, title_block
 from .drawing_window import DrawingWindow
 from .drawing_workspace import DrawingWorkspace
+from .sections import ExpandableSection
+from .tool_settings import ToolSettings
 
 
 class DrawingPage(QWidget):
@@ -13,6 +15,7 @@ class DrawingPage(QWidget):
     cancel_requested = Signal()
     speech_requested = Signal(str)
     speech_stop_requested = Signal()
+    settings_saved = Signal(object)
 
     def __init__(self, settings):
         super().__init__()
@@ -38,6 +41,11 @@ class DrawingPage(QWidget):
         self.float_button.clicked.connect(self.show_floating)
         heading.addWidget(self.float_button)
         layout.addLayout(heading)
+        self.advanced = ExpandableSection("Settings")
+        self.tool_settings = ToolSettings("drawing", settings)
+        self.tool_settings.saved.connect(self.settings_saved)
+        self.advanced.body_layout.addWidget(self.tool_settings)
+        layout.addWidget(self.advanced)
         self.workspace = DrawingWorkspace(settings)
         # Keep a single set of public controls for the existing controller interface.
         for name in (
@@ -96,7 +104,7 @@ class DrawingPage(QWidget):
     def dock_workspace(self):
         if self.is_floating:
             self.floating.take_workspace()
-            self.body_layout.insertWidget(1, self.workspace, 1)
+            self.body_layout.insertWidget(2, self.workspace, 1)
             self.workspace.show()
             self.is_floating = False
             self.placeholder.hide()
@@ -161,6 +169,7 @@ class DrawingPage(QWidget):
         was_enabled = self.settings.drawing_auto_send
         delay_changed = self.settings.drawing_debounce_ms != settings.drawing_debounce_ms
         self.settings = settings
+        self.tool_settings.update_settings(settings)
         self.canvas.pen_width = settings.drawing_pen_width
         if self.floating.pin_control.desired != settings.drawing_on_top:
             self.floating.pin_control.request(settings.drawing_on_top)

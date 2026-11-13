@@ -8,6 +8,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 
 from lang_handler.controller import Controller
 from lang_handler.errors import ServiceError
+from lang_handler.results import TranslationResult
 from lang_handler.settings import Settings
 from lang_handler.storage import Store
 from lang_handler.tts_api import pcm_to_wav
@@ -58,7 +59,7 @@ class FakeService:
         return audio.decode()
 
     def translate(self, text, *args):
-        return "translation: " + text
+        return TranslationResult("translation: " + text, "source reading", "target reading")
 
     def synthesize(self, text, *args):
         return pcm_to_wav(b"\x00\x00" * 100)
@@ -81,12 +82,12 @@ class FakePlayer:
 def controller(qapp, qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr("lang_handler.controller.AudioCapture", FakeCapture)
     monkeypatch.setattr("lang_handler.controller.GlobalShortcuts", FakeShortcuts)
-    monkeypatch.setattr("lang_handler.controller.copy_and_paste", lambda *args: "Copied.")
+    monkeypatch.setattr("lang_handler.dictation.deliver_transcript", lambda *args, **kwargs: "Copied.")
     monkeypatch.setattr("lang_handler.pipeline.OpenAIService", FakeService)
     monkeypatch.setattr("lang_handler.workflows.OpenAIService", FakeService)
     monkeypatch.setattr("lang_handler.workflows.play_audio", lambda path: FakePlayer())
     store = Store(tmp_path)
-    settings = Settings(auto_paste=False)
+    settings = Settings(input_delivery="copy")
     store.save_settings(settings)
     window = MainWindow(settings, api_key_present=True)
     overlay = CaptionOverlay(settings)

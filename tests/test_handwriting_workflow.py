@@ -71,7 +71,7 @@ def install_service(monkeypatch, work):
         def __init__(self, key, **kwargs):
             pass
 
-        def recognize_handwriting(self, png, model, instructions):
+        def recognize_handwriting(self, png, model, instructions, **kwargs):
             return work(png)
 
         def close(self):

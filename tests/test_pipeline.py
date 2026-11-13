@@ -9,6 +9,7 @@ from PySide6.QtCore import QThread
 from lang_handler.errors import ServiceError
 from lang_handler.jobs import Jobs
 from lang_handler.pipeline import CaptionPipeline
+from lang_handler.results import TranslationResult
 from lang_handler.settings import Settings
 
 
@@ -39,7 +40,7 @@ def test_live_sources_and_translations_stay_ordered_on_ui_thread(
         def translate(self, text, *args):
             worker_threads.append(QThread.currentThread())
             time.sleep(0.01)
-            return "translated " + text
+            return TranslationResult("translated " + text, "reading " + text, "translated reading " + text)
 
         def close(self):
             pass
@@ -47,13 +48,13 @@ def test_live_sources_and_translations_stay_ordered_on_ui_thread(
     monkeypatch.setattr("lang_handler.pipeline.OpenAIService", Service)
     sources, translations, completed, delivery_threads = [], [], [], []
 
-    def receive_source(mode, text):
+    def receive_source(mode, text, segment_id):
         delivery_threads.append(QThread.currentThread())
-        sources.append((mode, text))
+        sources.append((mode, text, segment_id))
 
-    def receive_translation(mode, text):
+    def receive_translation(mode, segment_id, result):
         delivery_threads.append(QThread.currentThread())
-        translations.append((mode, text))
+        translations.append((mode, segment_id, result.translation))
 
     pipeline.transcript.connect(receive_source)
     pipeline.translation.connect(receive_translation)
@@ -62,9 +63,9 @@ def test_live_sources_and_translations_stay_ordered_on_ui_thread(
     for text in (b"one", b"two", b"three"):
         pipeline.enqueue("output", text, settings, "test-key")
     qtbot.waitUntil(lambda: len(completed) == 3)
-    assert sources == [("output", text) for text in ("one", "two", "three")]
-    assert translations == [("output", "translated " + text) for text in ("one", "two", "three")]
-    assert [(row[1], row[2]) for row in completed] == [
+    assert sources == [("output", text, index) for index, text in enumerate(("one", "two", "three"), 1)]
+    assert translations == [("output", index, "translated " + text) for index, text in enumerate(("one", "two", "three"), 1)]
+    assert [(row[1], row[2].translation if isinstance(row[2], TranslationResult) else row[2]) for row in completed] == [
         (text, "translated " + text) for text in ("one", "two", "three")
     ]
     assert all(thread != qapp.thread() for thread in worker_threads)
@@ -199,7 +200,7 @@ def test_translation_failure_preserves_every_recognized_source_exactly_once(
 
         def translate(self, text, *args):
             if text == "one":
-                return "translated one"
+                return TranslationResult("translated one", "one", "one")
             assert release_failure.wait(2)
             raise ServiceError("OpenAI API credits are exhausted.")
 
@@ -218,7 +219,7 @@ def test_translation_failure_preserves_every_recognized_source_exactly_once(
         release_failure.set()
         qtbot.waitUntil(lambda: bool(errors))
         qtbot.waitUntil(lambda: not pipeline.busy["translation"])
-        assert [(row[1], row[2]) for row in completed] == [
+        assert [(row[1], row[2].translation if isinstance(row[2], TranslationResult) else row[2]) for row in completed] == [
             ("one", "translated one"),
             ("two", ""),
             ("three", ""),
@@ -247,7 +248,7 @@ def test_abort_and_shutdown_flush_recognized_sources_without_late_duplicates(
 
         def translate(self, text, *args):
             assert release.wait(2)
-            return "late translation"
+            return TranslationResult("late translation", "source", "target")
 
         def close(self):
             pass
@@ -265,10 +266,109 @@ def test_abort_and_shutdown_flush_recognized_sources_without_late_duplicates(
             pipeline.abort("output")
         else:
             pipeline.shutdown()
-        assert [(row[1], row[2]) for row in completed] == [("one", ""), ("two", "")]
+        assert [(row[1], row[2].translation if isinstance(row[2], TranslationResult) else row[2]) for row in completed] == [("one", ""), ("two", "")]
         release.set()
         qtbot.waitUntil(lambda: not pipeline.busy["translation"])
         assert len(completed) == 2
         assert translated == []
+    finally:
+        release.set()
+
+
+def test_repeated_text_keeps_segment_identity_across_translation_setting_snapshots(
+    pipeline, qtbot, monkeypatch
+):
+    started, release = threading.Event(), threading.Event()
+    calls = []
+
+    class Service:
+        def __init__(self, key, **kwargs):
+            pass
+
+        def transcribe(self, audio, *args):
+            if audio == b"first":
+                started.set()
+                assert release.wait(2)
+            return "はし"
+
+        def translate(self, text, model, target, instructions, reasoning):
+            calls.append((text, target, reasoning))
+            return TranslationResult(target + " result", "hashi", target + " reading")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", Service)
+    sources, translated, completed = [], [], []
+    pipeline.transcript.connect(lambda *args: sources.append(args))
+    pipeline.translation.connect(lambda *args: translated.append(args))
+    pipeline.completed.connect(lambda *args: completed.append(args))
+    settings = Settings(translation_enabled=False)
+    try:
+        pipeline.enqueue("output", b"first", settings, "key")
+        qtbot.waitUntil(started.is_set)
+        settings.translation_enabled = True
+        pipeline.enqueue("output", b"second", settings, "key")
+        settings.translation_enabled = False
+        pipeline.enqueue("output", b"third", settings, "key")
+        settings.translation_enabled = True
+        settings.target_language = "French"
+        settings.translation_reasoning = "high"
+        pipeline.enqueue("output", b"fourth", settings, "key")
+        release.set()
+        qtbot.waitUntil(lambda: len(completed) == 4)
+        assert sources == [("output", "はし", index) for index in range(1, 5)]
+        assert [(mode, segment_id) for mode, segment_id, _ in translated] == [
+            ("output", 2), ("output", 4)
+        ]
+        assert calls == [("はし", "English", "medium"), ("はし", "French", "high")]
+        assert translated[0][2].translation == "English result"
+        assert translated[1][2].translation == "French result"
+    finally:
+        release.set()
+
+
+def test_aborted_translation_id_is_not_reused_by_new_identical_speech(
+    pipeline, qtbot, monkeypatch
+):
+    started, release = threading.Event(), threading.Event()
+    count = 0
+
+    class Service:
+        def __init__(self, key, **kwargs):
+            pass
+
+        def transcribe(self, audio, *args):
+            return "こんにちは"
+
+        def translate(self, text, *args):
+            nonlocal count
+            count += 1
+            if count == 1:
+                started.set()
+                assert release.wait(2)
+            return TranslationResult("Hello", "Konnichiwa", "hello")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("lang_handler.pipeline.OpenAIService", Service)
+    sources, translated, completed = [], [], []
+    pipeline.transcript.connect(lambda *args: sources.append(args))
+    pipeline.translation.connect(lambda *args: translated.append(args))
+    pipeline.completed.connect(lambda *args: completed.append(args))
+    try:
+        pipeline.enqueue("output", b"old", Settings(), "key")
+        qtbot.waitUntil(started.is_set)
+        pipeline.abort("output")
+        pipeline.enqueue("output", b"new", Settings(), "key")
+        qtbot.waitUntil(lambda: len(sources) == 2)
+        assert sources[0][2] != sources[1][2]
+        release.set()
+        qtbot.waitUntil(lambda: len(completed) == 2)
+        assert len(translated) == 1
+        assert translated[0][1] == sources[1][2]
+        assert completed[0][2] == ""
+        assert completed[1][2].translation == "Hello"
     finally:
         release.set()

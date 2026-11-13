@@ -10,6 +10,7 @@ from openai import OpenAI
 from lang_handler.api import OpenAIService
 from lang_handler.errors import ServiceError
 from lang_handler.network import proxy_url, websocket_proxy
+from lang_handler.results import TranslationResult
 from lang_handler.tts_api import realtime_speech
 
 
@@ -72,20 +73,33 @@ def test_translation_is_stateless_and_keeps_input_separate():
                         "type": "message",
                         "role": "assistant",
                         "id": "msg_test",
-                        "content": [{"type": "output_text", "text": "Hello.", "annotations": []}],
+                        "content": [{"type": "output_text", "text": json.dumps({
+                            "translation": "Hello.",
+                            "source_pronunciation": "Konnichiwa.",
+                            "translation_pronunciation": "/həˈloʊ/",
+                        }), "annotations": []}],
                     }
                 ],
             },
         )
 
     service = service_with(handler)
-    assert service.translate("こんにちは。", "gpt-6-luna", "English", "Keep names.") == "Hello."
+    assert service.translate("こんにちは。", "gpt-6-luna", "English", "Keep names.") == (
+        TranslationResult("Hello.", "Konnichiwa.", "/həˈloʊ/")
+    )
     body = json.loads(requests[0].content)
     assert body["input"] == "こんにちは。"
     assert body["store"] is False
-    assert body["reasoning"] == {"effort": "low"}
+    assert body["reasoning"] == {"effort": "medium"}
     assert "English" in body["instructions"]
     assert "Keep names." in body["instructions"]
+    assert "ORIGINAL" in body["instructions"]
+    assert "TRANSLATED" in body["instructions"]
+    schema = body["text"]["format"]
+    assert schema["strict"] is True
+    assert set(schema["schema"]["required"]) == {
+        "translation", "source_pronunciation", "translation_pronunciation"
+    }
     service.close()
 
 

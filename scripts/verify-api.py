@@ -33,9 +33,11 @@ def main():
             raise RuntimeError("Whole-recording transcription was empty.")
         print("Once:", transcript)
         translated = service.translate(transcript, settings.translation_model, "English")
-        if not translated:
+        if not translated.translation:
             raise RuntimeError("Translation was empty.")
-        print("English:", translated)
+        print("English:", translated.translation)
+        print("Source pronunciation:", translated.source_pronunciation)
+        print("Translation pronunciation:", translated.translation_pronunciation)
         with tempfile.TemporaryDirectory(prefix="lang-in-out-api-test-") as directory:
             path = Path(directory) / "sample.wav"
             path.write_bytes(audio)

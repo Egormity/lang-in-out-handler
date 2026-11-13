@@ -152,9 +152,17 @@ class TextPane(QWidget):
         )
         layout.addLayout(row)
         layout.addWidget(self.text)
+        from .pronunciation import PronunciationGuide
+
+        self.pronunciation = PronunciationGuide()
+        layout.addWidget(self.pronunciation)
+        self.text.textChanged.connect(lambda: self.pronunciation.set_text(""))
         self.actions = QHBoxLayout()
         self.actions.addStretch()
         layout.addLayout(self.actions)
+
+    def set_pronunciation(self, text: str):
+        self.pronunciation.set_text(text)
 
     def add_action(self, text: str) -> QPushButton:
         action = button(text)

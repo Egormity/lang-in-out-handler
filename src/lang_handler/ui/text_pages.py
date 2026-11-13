@@ -4,11 +4,14 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout, QSplitter, QWidget
 
 from .common import TextPane, button, label, selection_combo, title_block
-from .sections import tool_layout
+from .sections import ExpandableSection, tool_layout
+from .tool_settings import ToolSettings
 
 
 class TranslatePage(QWidget):
     requested = Signal(str)
+    settings_saved = Signal(object)
+    options_changed = Signal(object)
     speech_requested = Signal(str)
     stop_requested = Signal()
     replay_requested = Signal(str)
@@ -30,6 +33,11 @@ class TranslatePage(QWidget):
         self.run.clicked.connect(lambda: self.requested.emit(self.source.text.toPlainText()))
         actions.addWidget(self.run)
         layout.addLayout(actions)
+        self.advanced = ExpandableSection("Settings")
+        self.tool_settings = ToolSettings("translate", settings)
+        self.tool_settings.saved.connect(self.settings_saved)
+        self.advanced.body_layout.addWidget(self.tool_settings)
+        layout.addWidget(self.advanced)
         self.splitter = QSplitter()
         self.splitter.setHandleWidth(12)
         self.splitter.setChildrenCollapsible(False)
@@ -44,8 +52,24 @@ class TranslatePage(QWidget):
         self.splitter.setSizes([450, 450])
         layout.addWidget(self.splitter, 1)
         self.apply_settings(settings)
+        self.target.currentTextChanged.connect(
+            lambda value: self.options_changed.emit({"target_language": value})
+        )
+
+    def set_result(self, result, source_text=None, target_language=None):
+        if source_text is not None and self.source.text.toPlainText() != source_text:
+            return False
+        if target_language is not None and self.target.currentText() != target_language:
+            return False
+        self.result.text.setPlainText(result.translation)
+        self.source.set_pronunciation(result.source_pronunciation)
+        self.result.set_pronunciation(result.translation_pronunciation)
+        return True
 
     def apply_settings(self, settings):
+        self.tool_settings.update_settings(settings)
+        self.target.blockSignals(True)
         if self.target.findText(settings.target_language) < 0:
             self.target.addItem(settings.target_language)
         self.target.setCurrentText(settings.target_language)
+        self.target.blockSignals(False)

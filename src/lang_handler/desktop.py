@@ -82,27 +82,45 @@ def copy_and_paste(text: str, auto_paste: bool = True) -> str:
     copy_text(text)
     if not auto_paste:
         return "Copied to clipboard."
-    wayland = bool(os.environ.get("WAYLAND_DISPLAY"))
     try:
-        if wayland and shutil.which("ydotool"):
-            environment = os.environ.copy()
-            socket = (
-                Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
-                / ".ydotool_socket"
-            )
-            if "YDOTOOL_SOCKET" not in environment and socket.exists():
-                environment["YDOTOOL_SOCKET"] = str(socket)
-            _run(
-                ["ydotool", "key", "--key-delay", "20", "29:1", "47:1", "47:0", "29:0"],
-                env=environment,
-            )
-            return "Pasted into the active app; also copied to clipboard."
-        if not wayland and shutil.which("xdotool"):
-            _run(["xdotool", "key", "--clearmodifiers", "ctrl+v"])
+        if paste_keys():
             return "Pasted into the active app; also copied to clipboard."
     except (OSError, subprocess.SubprocessError):
         return "Copied. Automatic paste failed; press Ctrl+V to insert it."
     return "Copied. Automatic paste needs ydotool on Wayland or xdotool on X11."
+
+
+def paste_supported() -> bool:
+    tool = "ydotool" if os.environ.get("WAYLAND_DISPLAY") else "xdotool"
+    return bool(shutil.which(tool))
+
+
+def paste_keys() -> bool:
+    """Send Ctrl+V to the existing focus without taking focus ourselves."""
+    if not paste_supported():
+        return False
+    if os.environ.get("WAYLAND_DISPLAY"):
+        environment = os.environ.copy()
+        socket = (
+            Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+            / ".ydotool_socket"
+        )
+        if "YDOTOOL_SOCKET" not in environment and socket.exists():
+            environment["YDOTOOL_SOCKET"] = str(socket)
+        _run(
+            ["ydotool", "key", "--key-delay", "20", "29:1", "47:1", "47:0", "29:0"],
+            env=environment,
+        )
+    else:
+        _run(["xdotool", "key", "--clearmodifiers", "ctrl+v"])
+    return True
+
+
+def deliver_transcript(text: str, mode: str, *, allow_paste: bool = True) -> str:
+    """Deliver a transcript from a worker; the GUI loop must remain available."""
+    from .delivery import deliver
+
+    return deliver(text, mode, allow_paste=allow_paste)
 
 
 def play_audio(path: str | Path) -> subprocess.Popen:

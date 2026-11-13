@@ -1,9 +1,9 @@
-"""Preference sections grouped by the task they configure."""
+"""Shared settings builders and the application-wide speech/shortcut sections."""
 
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QCheckBox, QFormLayout, QGroupBox, QKeySequenceEdit, QPlainTextEdit
 
-from .audio_controls import AudioSourceCombo
+from ..reasoning import REASONING_EFFORTS, supports_reasoning
 from .common import label, language_combo, language_value, selection_combo
 from .preference_controls import NumberInput
 from .sections import scrollable_body
@@ -25,11 +25,10 @@ def model(page, settings, form, key):
     if key in ("translation_model", "drawing_model"):
         choices += ["gpt-6-luna", "gpt-6.1-sol"]
     widget = selection_combo(choices, value)
-    widget.setToolTip(
-        "Choose a model. Refresh models in Connection to load your account's choices."
-    )
+    widget.setToolTip("Refresh models in global Preferences → Connection to load your account's choices.")
     page.models[key] = widget
     page.fields.add(form, "Model", key, widget)
+    return widget
 
 
 def instructions(page, settings, form, key):
@@ -57,132 +56,47 @@ def number(page, form, title, key, *, attr=None, read=None, write=None, **kwargs
     return widget
 
 
-def recognition(page, settings):
-    scroll, layout = scrollable_body()
-    layout.addWidget(label("Capture, recognition, and floating caption behavior.", True))
-    for mode, heading, source_key in [
-        ("input", "Voice input", "microphone_source"),
-        ("output", "Live captions", "output_source"),
-    ]:
-        form = group(heading, layout)
-        model(page, settings, form, f"{mode}_model")
-        language = language_combo(getattr(settings, f"{mode}_language"))
-        setattr(page, f"{mode}_language", language)
-        page.fields.add(
-            form,
-            "Language",
-            f"{mode}_language",
-            language,
-            read=lambda w=language: language_value(w),
-            write=lambda value, w=language: w.setCurrentIndex(max(0, w.findData(value))),
-        )
-        source = AudioSourceCombo(mode == "output", getattr(settings, source_key))
-        setattr(page, source_key, source)
-        page.fields.add(
-            form,
-            "Audio source" if mode == "output" else "Microphone",
-            source_key,
-            source,
-            read=source.source_name,
-            write=source.set_value,
-        )
-        toggle(page, form, "Continuous chunks", f"{mode}_chunked")
-        if mode == "input":
-            toggle(page, form, "Paste into active app", "auto_paste")
-        instructions(page, settings, form, f"{mode}_instructions")
-    form = group("Capture & floating window", layout)
-    number(
-        page,
-        form,
-        "Chunk duration",
-        "chunk_seconds",
-        minimum=2,
-        maximum=30,
-        step=0.5,
-        decimals=1,
-        suffix=" seconds",
-    )
-    number(page, form, "Caption text size", "font_size", minimum=12, maximum=56, suffix=" px")
-    page.opacity = NumberInput(40, 100, step=5, suffix="%", name="Window opacity")
+def language(page, settings, form, key):
+    widget = language_combo(getattr(settings, key))
+    setattr(page, key, widget)
     page.fields.add(
-        form,
-        "Window opacity",
-        "overlay_opacity",
-        page.opacity,
-        read=lambda: page.opacity.value() / 100,
-        write=lambda value: page.opacity.setValue(round(value * 100)),
+        form, "Language", key, widget,
+        read=lambda: language_value(widget),
+        write=lambda value: widget.setCurrentIndex(max(0, widget.findData(value))),
     )
-    toggle(page, form, "Keep captions on top", "overlay_on_top")
-    toggle(page, form, "Show transcript", "transcript_visible")
-    toggle(page, form, "Show translation", "translation_visible")
-    layout.addStretch()
-    return scroll
+    return widget
 
 
-def translation(page, settings):
+def reasoning(page, settings, form, key, model_widget):
+    widget = selection_combo([effort.capitalize() for effort in REASONING_EFFORTS], getattr(settings, key).capitalize())
+    widget.setAccessibleName("Reasoning effort")
+    widget.setToolTip("More reasoning can improve difficult results and take longer. Applies to reasoning models.")
+    setattr(page, key, widget)
+    page.fields.add(
+        form, "Reasoning", key, widget,
+        read=lambda: widget.currentText().lower(),
+        write=lambda value: widget.setCurrentText(value.capitalize()),
+    )
+
+    def update():
+        widget.setEnabled(supports_reasoning(model_widget.currentText()))
+
+    model_widget.currentTextChanged.connect(update)
+    update()
+
+
+def speech(page, settings):
     scroll, layout = scrollable_body()
-    layout.addWidget(label("Speech settings apply to every Speak button in the app.", True))
-    form = group("Translation", layout)
-    model(page, settings, form, "translation_model")
-    page.target_language = selection_combo(
-        ["English", "Russian", "Japanese", "Spanish", "French", "German", "Chinese", "Korean"],
-        settings.target_language,
-    )
-    page.fields.add(form, "Translate into", "target_language", page.target_language)
-    instructions(page, settings, form, "translation_instructions")
-    form = group("Speech playback", layout)
+    layout.addWidget(label("These settings apply to every Speak button and Read clipboard shortcut.", True))
+    form = group("Shared speech playback", layout)
     model(page, settings, form, "tts_model")
     page.voice = selection_combo(
-        [
-            "coral",
-            "alloy",
-            "ash",
-            "ballad",
-            "echo",
-            "fable",
-            "nova",
-            "onyx",
-            "sage",
-            "shimmer",
-            "verse",
-            "marin",
-            "cedar",
-        ],
+        ["coral", "alloy", "ash", "ballad", "echo", "fable", "nova", "onyx", "sage",
+         "shimmer", "verse", "marin", "cedar"],
         settings.voice,
     )
     page.fields.add(form, "Voice", "voice", page.voice)
     instructions(page, settings, form, "tts_instructions")
-    layout.addStretch()
-    return scroll
-
-
-def handwriting(page, settings):
-    scroll, layout = scrollable_body()
-    layout.addWidget(
-        label("Handwriting returns a list of possible readings, most likely first.", True)
-    )
-    form = group("Handwriting recognition", layout)
-    model(page, settings, form, "drawing_model")
-    toggle(page, form, "Automatic recognition", "drawing_auto_send")
-    page.drawing_delay = NumberInput(
-        0.2, 10, step=0.1, decimals=1, suffix=" seconds", name="Wait after drawing"
-    )
-    page.fields.add(
-        form,
-        "Wait after drawing",
-        "drawing_debounce_ms",
-        page.drawing_delay,
-        read=lambda: round(page.drawing_delay.value() * 1000),
-        write=lambda value: page.drawing_delay.setValue(value / 1000),
-    )
-    page.drawing_auto_send.toggled.connect(page.drawing_delay.setEnabled)
-    instructions(page, settings, form, "drawing_instructions")
-    form = group("Canvas", layout)
-    number(page, form, "Pen width", "drawing_pen_width", minimum=1, maximum=16, suffix=" px")
-    toggle(page, form, "Keep handwriting on top", "drawing_on_top")
-    layout.addWidget(
-        label("When automatic recognition is off, use Send to transcribe on the canvas.", True)
-    )
     layout.addStretch()
     return scroll
 
@@ -202,13 +116,8 @@ def shortcuts(page, settings):
         widget.setMaximumSequenceLength(1)
         page.shortcuts[mode] = widget
         page.fields.add(
-            form,
-            title,
-            f"shortcut:{mode}",
-            widget,
-            read=lambda w=widget: w.keySequence().toString(
-                QKeySequence.SequenceFormat.PortableText
-            ),
+            form, title, f"shortcut:{mode}", widget,
+            read=lambda w=widget: w.keySequence().toString(QKeySequence.SequenceFormat.PortableText),
             write=lambda value, w=widget: w.setKeySequence(QKeySequence(value)),
             default=page.fields.defaults.shortcuts.get(mode, ""),
         )
