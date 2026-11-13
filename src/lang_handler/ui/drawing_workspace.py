@@ -1,5 +1,7 @@
 """The same uncluttered canvas in docked and floating views."""
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from .common import button, label
@@ -17,13 +19,21 @@ class DrawingWorkspace(QWidget):
         layout.setSpacing(10)
         tools = QHBoxLayout()
         tools.setSpacing(2)
-        self.undo_button = icon_button("undo", "Undo last stroke")
+        self.undo_button = icon_button("undo", "Undo drawing (Ctrl+Z)")
+        self.redo_button = icon_button("redo", "Redo drawing (Ctrl+Shift+Z)")
         self.clear_button = icon_button("clear", "Clear canvas")
         tools.addWidget(self.undo_button)
+        tools.addWidget(self.redo_button)
         tools.addWidget(self.clear_button)
         tools.addStretch()
         layout.addLayout(tools)
         self.canvas = DrawingCanvas()
+        self.undo_shortcut = QShortcut(QKeySequence("Ctrl+Z"), self)
+        self.redo_shortcut = QShortcut(QKeySequence("Ctrl+Shift+Z"), self)
+        for shortcut in (self.undo_shortcut, self.redo_shortcut):
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.undo_shortcut.activated.connect(self.canvas.undo)
+        self.redo_shortcut.activated.connect(self.canvas.redo)
         self.canvas.pen_width = settings.drawing_pen_width
         self.canvas.setMinimumHeight(200)
         layout.addWidget(self.canvas, 3)

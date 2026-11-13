@@ -56,6 +56,7 @@ class DrawingPage(QWidget):
             "result",
             "send_button",
             "undo_button",
+            "redo_button",
             "clear_button",
             "status",
         ):
@@ -80,6 +81,7 @@ class DrawingPage(QWidget):
         self.placeholder.hide()
         layout.addWidget(self.placeholder, 1)
         self.undo_button.clicked.connect(self.canvas.undo)
+        self.redo_button.clicked.connect(self.canvas.redo)
         self.clear_button.clicked.connect(self.canvas.clear)
         self.send_button.clicked.connect(self.send)
         self.timer = QTimer(self)
@@ -88,6 +90,7 @@ class DrawingPage(QWidget):
         self.timer.timeout.connect(self.send)
         self.canvas.changed.connect(self._canvas_changed)
         self.undo_button.setEnabled(False)
+        self.redo_button.setEnabled(False)
         self.clear_button.setEnabled(False)
 
     def show_floating(self):
@@ -122,7 +125,8 @@ class DrawingPage(QWidget):
     def _canvas_changed(self, revision):
         self.timer.stop()
         blank = self.canvas.is_blank
-        self.undo_button.setEnabled(not blank)
+        self.undo_button.setEnabled(self.canvas.can_undo)
+        self.redo_button.setEnabled(self.canvas.can_redo)
         self.clear_button.setEnabled(not blank)
         self.send_button.setEnabled(not blank and not self.canvas.is_drawing)
         self.result.clear()

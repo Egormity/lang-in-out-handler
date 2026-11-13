@@ -16,6 +16,7 @@ _PATHS = {
     "float": '<path d="M14 3h7v7M21 3l-9 9M10 5H4a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-6"/>',
     "dock": '<path d="M3 10V3h7M3 3l9 9M14 5h6a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-6"/>',
     "undo": '<path d="m8 4-5 5 5 5M3 9h11a6 6 0 0 1 0 12H9"/>',
+    "redo": '<path d="m16 4 5 5-5 5M21 9H10a6 6 0 0 0 0 12h5"/>',
     "clear": '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>',
     "close": '<path d="m6 6 12 12M18 6 6 18"/>',
     "stop": '<rect x="5" y="5" width="14" height="14" rx="2"/>',
